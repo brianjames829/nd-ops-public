@@ -1,6 +1,6 @@
 # Monitoring & Edge Security Alignment Case
 
-Last Updated: 2026-02-24
+Last Updated: 2026-05-25
 
 Purpose:
 Document a real-world interaction between edge security controls and uptime monitoring, and the resolution implemented to align reliability and protection.
@@ -9,19 +9,21 @@ Document a real-world interaction between edge security controls and uptime moni
 
 ## Environment
 
-- WordPress + WooCommerce (shared hosting)
-- Cloudflare (DNS, TLS, edge security)
-- BetterStack (external uptime monitoring)
+- WordPress + WooCommerce application stack
+- CDN / DNS / TLS edge layer
+- External uptime monitoring
+
+Specific implementation details are intentionally generalized for public release.
 
 ---
 
 ## Summary
 
-External uptime monitoring reported HTTP 403 responses from non-US probe regions.
+External uptime monitoring reported HTTP 403 responses from non-primary geographic probe regions.
 
-End-user access from primary geography (US) remained unaffected.
+End-user access from the primary operating geography remained unaffected.
 
-Issue identified as an interaction between Cloudflare edge security rules and globally distributed monitoring probes.
+The issue was identified as an interaction between edge security controls and globally distributed monitoring probes.
 
 No customer-visible outage occurred.
 
@@ -29,9 +31,9 @@ No customer-visible outage occurred.
 
 ## Detection
 
-- Alert source: BetterStack uptime monitor
-- Symptom: HTTP 403 responses from Europe, Asia, and Australia probe regions
-- Manual verification: Site accessible via browser (HTTP 200)
+- Alert source: external uptime monitor
+- Symptom: HTTP 403 responses from several non-primary probe regions
+- Manual verification: site remained accessible through normal browser access
 
 Classification:
 Monitoring / security-control interaction  
@@ -41,11 +43,11 @@ Not a true service outage
 
 ## Root Cause
 
-A Cloudflare security rule applied a **Managed Challenge** to traffic originating outside the United States:
+A broad edge security challenge rule affected traffic from some globally distributed monitoring probes.
 
-Global BetterStack probes received challenge responses.
+The probes received challenge responses.
 
-Monitoring interpreted the challenge response as degraded availability.
+The monitoring system interpreted those challenge responses as degraded availability.
 
 ---
 
@@ -60,35 +62,35 @@ Monitoring interpreted the challenge response as degraded availability.
 
 ## Decision
 
-Rather than weaken edge security globally:
+Rather than weaken edge security globally, the control model was refactored from broad traffic treatment to more targeted protection.
 
-1. Removed the blanket geo-based challenge rule.
-2. Replaced it with endpoint-specific protections:
-   - Managed Challenge on `/wp-login.php`
-   - Block on `/xmlrpc.php`
-   - Login rate limiting (5 req/min → 10 minute block)
-   - Bot Fight Mode enabled
-3. Verified monitoring probe behavior post-change.
+The revised approach used:
 
-Security posture was strengthened while restoring monitoring accuracy.
+- targeted protection on authentication-related endpoints
+- disabled or blocked legacy/high-risk endpoints where appropriate
+- rate limiting on login-related traffic
+- bot mitigation controls
+- post-change monitoring validation
+
+Security posture remained active while monitoring accuracy was restored.
 
 ---
 
 ## Result
 
-- Monitoring probes now return HTTP 200 consistently.
-- No further false-positive alerts observed.
-- Edge protection remains active and targeted.
-- Monitoring and security posture aligned.
+- Monitoring returned to expected behavior.
+- False-positive availability alerts stopped.
+- Edge protection remained active and more targeted.
+- Monitoring and security posture became better aligned.
 
 ---
 
 ## Preventative Controls
 
-- Avoid broad geo-based challenge rules without validating monitoring impact.
-- Prefer endpoint-scoped protection over global traffic rules.
-- Validate monitoring behavior after any edge security change.
-- Close documentation loop immediately after resolution.
+- Avoid broad edge challenge rules without validating monitoring impact.
+- Prefer endpoint-scoped protection over broad traffic rules when appropriate.
+- Validate monitoring behavior after edge security changes.
+- Document false positives and close the documentation loop after resolution.
 
 ---
 
@@ -102,7 +104,25 @@ Targeted controls reduce noise while preserving protection.
 
 ---
 
+## Intentional Omissions
+
+This public artifact intentionally omits:
+
+- exact rule names
+- account identifiers
+- private dashboards
+- detailed control values
+- internal monitoring configuration
+- private screenshots
+
+The purpose is to show the reliability lesson, not expose the operational control layout.
+
+---
+
 ## Status
 
 Closed.
-Monitoring and edge security configuration aligned as of 2026-02-24.
+
+Monitoring and edge security posture aligned as of February 2026.
+
+Public-safe wording updated on 2026-05-25.
