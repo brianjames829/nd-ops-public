@@ -85,7 +85,7 @@ This repository must intentionally exclude:
 - private dashboards
 - customer/client records
 - internal strategy
-- private Tess/ND intelligence memory
+- private Tesser/ND intelligence memory
 - unsanitized model prompts/context containing private information
 - detailed security controls that materially increase attack risk
 - bank/payment records
@@ -95,11 +95,13 @@ Private repositories remain the authoritative source layer for internal depth.
 
 ---
 
-## Public Tesseract Boundary
+## Public Tesser Boundary
 
-If Tesseract eventually has public Base/Web3 tools or public repositories, they should expose intentionally public-safe code/data/interfaces.
+If Tesser eventually has public Base/Web3 tools or public repositories, they should expose intentionally public-safe code/data/interfaces.
 
-This repository may publish sanitized case studies or proof from that work, but it must not become a mirror of private Tess Core.
+This repository may publish sanitized case studies or proof from that work, but it must not become a mirror of private Tesser Core.
+
+`Tesser` is the internal identity. Public commercial use of the name requires Nightcoder Designs' normal naming/conflict validation before launch.
 
 ---
 
