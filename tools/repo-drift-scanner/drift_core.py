@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 DEFAULT_EXCLUDES = {'.git', '.venv', 'venv', '__pycache__', 'node_modules'}
-DEFAULT_EXTENSIONS = {'.md', '.txt', '.json', '.jsonl', '.yaml', '.yml', '.py', '.toml'}
+DEFAULT_EXTENSIONS = {'.md', '.rst', '.txt', '.json', '.jsonl', '.yaml', '.yml', '.py', '.toml'}
+DEFAULT_TEXT_FILENAMES = {
+    'README', 'CHANGELOG', 'SECURITY', 'VERSION', 'CONTRIBUTING', 'ROADMAP', 'ARCHITECTURE'
+}
 MATCH_MODES = {'substring', 'phrase', 'regex'}
 HISTORICAL_AUTHORITIES = {'historical', 'archive'}
 HISTORICAL_DIR_NAMES = {'history', 'archive', 'archives'}
@@ -262,10 +265,10 @@ def load_config(path: Path) -> tuple[list[AuthorityRule], list[TruthRule], list[
 def _built_in_authority(rel_path: str) -> str | None:
     p = Path(rel_path.replace('\\', '/'))
     lowered_parts = {part.casefold() for part in p.parts}
-    name = p.name.casefold()
+    stem = p.stem.casefold()
     if lowered_parts.intersection(HISTORICAL_DIR_NAMES):
         return 'historical'
-    if name.endswith('_log.md') or name.endswith('_archive.md') or name.endswith('_history.md'):
+    if stem.endswith('_log') or stem.endswith('_archive') or stem.endswith('_history'):
         return 'historical'
     return None
 
@@ -279,13 +282,20 @@ def classify_authority(rel_path: str, rules: Iterable[AuthorityRule]) -> str:
     return _built_in_authority(normalized) or 'reference'
 
 
+def _is_supported_text_path(path: Path) -> bool:
+    return (
+        path.suffix.lower() in DEFAULT_EXTENSIONS
+        or (not path.suffix and path.name.upper() in DEFAULT_TEXT_FILENAMES)
+    )
+
+
 def iter_text_files(root: Path) -> Iterable[Path]:
     for path in sorted(root.rglob('*')):
         if not path.is_file():
             continue
         if any(part in DEFAULT_EXCLUDES for part in path.relative_to(root).parts):
             continue
-        if path.suffix.lower() in DEFAULT_EXTENSIONS:
+        if _is_supported_text_path(path):
             yield path
 
 
