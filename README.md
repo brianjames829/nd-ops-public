@@ -12,25 +12,32 @@ Private Nightcoder Designs repositories remain authoritative for internal state.
 
 ## Start Here
 
-### Runnable: Repo Drift Scanner
+### Runnable: Repo Drift Scanner v0.2
 
 [`tools/repo-drift-scanner/`](./tools/repo-drift-scanner/)
 
-A small Python utility that scans repositories for stale statements while distinguishing current drift from legitimate historical records.
+A deterministic Python utility that scans repositories for stale statements while distinguishing current drift from legitimate historical records.
 
-It includes:
+v0.2 is the operational-hardening release. It includes:
 
 - authority-aware file classification
-- configurable current-truth / stale-pattern rules
+- declared current-truth / stale-pattern rules
+- backward-compatible substring matching
+- opt-in phrase and regex matching
+- rule-specific inline suppressions
+- config suppressions with required reasons
+- inspectable suppressed findings
+- context around findings
+- theatrical terminal, JSON, and Markdown reports
+- summaries by rule and authority
+- `--changed-only` and `--changed-since <ref>` Git modes
 - deterministic haunting score
-- single-file `--door` mode
-- machine-readable JSON output
-- exit codes suitable for future CI use
+- stable automation-oriented exit codes
 - fictional demo repository
-- unit tests
-- zero model/API dependencies
+- 29 focused tests
+- zero model/API/runtime-package dependencies
 
-The interface is deliberately stranger than the machinery. The underlying scanner is deterministic.
+The interface is deliberately stranger than the machinery. The underlying scanner remains deterministic and does not infer truth or rewrite files.
 
 ### Tesser v0.2 Repository Ingestion Spine
 
