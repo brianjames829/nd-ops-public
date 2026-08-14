@@ -1,0 +1,32 @@
+{
+  "authority_rules": [
+    {"pattern": "archive/**", "authority": "historical"},
+    {"pattern": "**/archive/**", "authority": "historical"},
+    {"pattern": "ARCHITECTURE.md", "authority": "governing"},
+    {"pattern": "README.md", "authority": "current"},
+    {"pattern": "**/README.md", "authority": "current"}
+  ],
+  "truths": [
+    {
+      "id": "database",
+      "description": "Current primary database",
+      "canonical": "PostgreSQL",
+      "stale_patterns": ["MongoDB"],
+      "severity": 10
+    },
+    {
+      "id": "api-version",
+      "description": "Current public API version",
+      "canonical": "v3",
+      "stale_patterns": ["API v1", "API v2"],
+      "severity": 7
+    },
+    {
+      "id": "project-name",
+      "description": "Current project identity",
+      "canonical": "Acme Relay",
+      "stale_patterns": ["Project Rocket"],
+      "severity": 5
+    }
+  ]
+}
