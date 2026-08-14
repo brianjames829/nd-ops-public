@@ -12,13 +12,13 @@ Private Nightcoder Designs repositories remain authoritative for internal state.
 
 ## Start Here
 
-### Runnable: Repo Drift Scanner v0.3
+### Runnable: Repo Drift Scanner v0.3.1
 
 [`tools/repo-drift-scanner/`](./tools/repo-drift-scanner/)
 
 A deterministic Python utility that scans for stale current truth and validates explicit repository contracts without using an LLM.
 
-v0.3 keeps the v0.2 text-drift engine and adds deterministic validation for:
+v0.3 introduced deterministic validation for:
 
 - authority contracts
 - structured JSON assertions
@@ -34,9 +34,17 @@ v0.3 keeps the v0.2 text-drift engine and adds deterministic validation for:
 - `--changed-only`, `--changed-since <ref>`, and append-only baseline checks
 - zero model/API/runtime-package dependencies
 
-The v0.3 pre-publication development harness ran 53 focused tests successfully, and the original v0.2 fictional demo retained its previous 2-drift / 2-history / 2-suppression result under the new engine.
+v0.3.1 adds source-coverage hardening after an external public-repository benchmark exposed a silent format blind spot:
 
-The interface is deliberately stranger than the machinery. The scanner only claims violations where the repository declares a deterministic contract; ambiguous signals can be emitted as review findings instead of pretending certainty.
+- `.rst` scanning
+- important extensionless text surfaces such as `README` and `VERSION`
+- coverage accounting for text/source candidates discovered, scanned, and ignored
+- ignored-type summaries
+- non-blocking coverage reviews when a high-value text surface such as `README.adoc` is not actually scanned
+
+The v0.3 development harness ran 53 focused tests successfully. The v0.3.1 coverage changes then passed a separate 15/15 focused regression harness, including replay of the external `.rst` miss and preservation of the original v0.2 fictional demo behavior.
+
+The interface is deliberately stranger than the machinery. The scanner only claims violations where the repository declares a deterministic contract; ambiguous or incomplete-coverage signals remain review findings instead of pretending certainty.
 
 ### Tesser v0.2 Repository Ingestion Spine
 
