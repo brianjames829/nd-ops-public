@@ -4,6 +4,7 @@ import fnmatch
 import json
 import re
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -11,6 +12,7 @@ DEFAULT_EXCLUDES = {'.git', '.venv', 'venv', '__pycache__', 'node_modules'}
 DEFAULT_EXTENSIONS = {'.md', '.txt', '.json', '.jsonl', '.yaml', '.yml', '.py', '.toml'}
 MATCH_MODES = {'substring', 'phrase', 'regex'}
 HISTORICAL_AUTHORITIES = {'historical', 'archive'}
+HISTORICAL_DIR_NAMES = {'history', 'archive', 'archives'}
 INLINE_MARKER = re.compile(r'drift-ignore:\s*([A-Za-z0-9_.-]+)', re.IGNORECASE)
 SLUG = re.compile(r'^[A-Za-z0-9_.-]+$')
 
@@ -34,6 +36,9 @@ class TruthRule:
     canonical: str
     stale_patterns: tuple[PatternSpec, ...]
     severity: int = 10
+    canonical_source: str | None = None
+    introduced: str | None = None
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -41,6 +46,7 @@ class SuppressionRule:
     path: str
     rule_id: str
     reason: str
+    expires: date | None = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,9 @@ class Finding:
     context_after: tuple[tuple[int, str], ...] = ()
     suppression_source: str | None = None
     suppression_reason: str | None = None
+    canonical_source: str | None = None
+    introduced: str | None = None
+    rule_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -74,6 +83,10 @@ class ScanResult:
     @property
     def ghosts(self) -> tuple[Finding, ...]:
         return tuple(f for f in self.findings if f.kind == 'harmless_ghost')
+
+    @property
+    def reviews(self) -> tuple[Finding, ...]:
+        return tuple(f for f in self.findings if f.kind == 'review')
 
     @property
     def haunting_score(self) -> int:
@@ -126,16 +139,32 @@ def _parse_pattern(raw: object, where: str) -> PatternSpec:
     return PatternSpec(value, mode)
 
 
-def load_config(path: Path) -> tuple[list[AuthorityRule], list[TruthRule], list[SuppressionRule]]:
+def _parse_date(raw: object, where: str) -> date | None:
+    if raw is None:
+        return None
+    value = _expect_string(raw, where)
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ConfigError(f'{where} must be YYYY-MM-DD') from exc
+
+
+def _load_root(path: Path) -> dict:
     try:
         data = json.loads(path.read_text(encoding='utf-8'))
     except FileNotFoundError as exc:
         raise ConfigError(f'config file not found: {path}') from exc
     except json.JSONDecodeError as exc:
-        raise ConfigError(f'config JSON is invalid at line {exc.lineno}, column {exc.colno}: {exc.msg}') from exc
-
+        raise ConfigError(
+            f'config JSON is invalid at line {exc.lineno}, column {exc.colno}: {exc.msg}'
+        ) from exc
     root = _expect_dict(data, 'config')
-    _reject_unknown(root, {'authority_rules', 'truths', 'suppressions'}, 'config')
+    _reject_unknown(root, {'authority_rules', 'truths', 'suppressions', 'contracts'}, 'config')
+    return root
+
+
+def load_config(path: Path) -> tuple[list[AuthorityRule], list[TruthRule], list[SuppressionRule]]:
+    root = _load_root(path)
 
     authorities: list[AuthorityRule] = []
     seen_patterns: dict[str, str] = {}
@@ -159,15 +188,23 @@ def load_config(path: Path) -> tuple[list[AuthorityRule], list[TruthRule], list[
         authorities.append(AuthorityRule(pattern, authority))
 
     raw_truths = _expect_list(root.get('truths', []), 'truths')
-    if not raw_truths:
-        raise ConfigError('config must contain at least one truth rule')
+    raw_contracts = _expect_list(root.get('contracts', []), 'contracts')
+    if not raw_truths and not raw_contracts:
+        raise ConfigError('config must contain at least one truth rule or contract')
 
     truths: list[TruthRule] = []
     rule_ids: set[str] = set()
     for index, raw in enumerate(raw_truths):
         where = f'truths[{index}]'
         item = _expect_dict(raw, where)
-        _reject_unknown(item, {'id', 'description', 'canonical', 'stale_patterns', 'severity'}, where)
+        _reject_unknown(
+            item,
+            {
+                'id', 'description', 'canonical', 'stale_patterns', 'severity',
+                'canonical_source', 'introduced', 'reason',
+            },
+            where,
+        )
         rule_id = _expect_string(item.get('id'), f'{where}.id')
         if not SLUG.fullmatch(rule_id):
             raise ConfigError(f'{where}.id must contain only letters, numbers, ., _, or -')
@@ -188,29 +225,58 @@ def load_config(path: Path) -> tuple[list[AuthorityRule], list[TruthRule], list[
         keys = [(p.value.casefold(), p.match) for p in patterns]
         if len(keys) != len(set(keys)):
             raise ConfigError(f'{where}.stale_patterns contains a duplicate pattern/match pair')
-        truths.append(TruthRule(rule_id, description, canonical, patterns, severity))
+
+        canonical_source = item.get('canonical_source')
+        if canonical_source is not None:
+            canonical_source = _expect_string(canonical_source, f'{where}.canonical_source')
+        introduced = item.get('introduced')
+        if introduced is not None:
+            introduced = _expect_string(introduced, f'{where}.introduced')
+        reason = item.get('reason')
+        if reason is not None:
+            reason = _expect_string(reason, f'{where}.reason')
+
+        truths.append(
+            TruthRule(
+                rule_id, description, canonical, patterns, severity,
+                canonical_source, introduced, reason,
+            )
+        )
 
     suppressions: list[SuppressionRule] = []
     for index, raw in enumerate(_expect_list(root.get('suppressions', []), 'suppressions')):
         where = f'suppressions[{index}]'
         item = _expect_dict(raw, where)
-        _reject_unknown(item, {'path', 'rule_id', 'reason'}, where)
+        _reject_unknown(item, {'path', 'rule_id', 'reason', 'expires'}, where)
         path_pattern = _expect_string(item.get('path'), f'{where}.path')
         rule_id = _expect_string(item.get('rule_id'), f'{where}.rule_id')
         reason = _expect_string(item.get('reason'), f'{where}.reason')
         if rule_id not in rule_ids:
             raise ConfigError(f'{where}.rule_id references unknown truth rule: {rule_id}')
-        suppressions.append(SuppressionRule(path_pattern, rule_id, reason))
+        expires = _parse_date(item.get('expires'), f'{where}.expires')
+        suppressions.append(SuppressionRule(path_pattern, rule_id, reason, expires))
 
     return authorities, truths, suppressions
 
 
+def _built_in_authority(rel_path: str) -> str | None:
+    p = Path(rel_path.replace('\\', '/'))
+    lowered_parts = {part.casefold() for part in p.parts}
+    name = p.name.casefold()
+    if lowered_parts.intersection(HISTORICAL_DIR_NAMES):
+        return 'historical'
+    if name.endswith('_log.md') or name.endswith('_archive.md') or name.endswith('_history.md'):
+        return 'historical'
+    return None
+
+
 def classify_authority(rel_path: str, rules: Iterable[AuthorityRule]) -> str:
     normalized = rel_path.replace('\\', '/')
+    # Explicit project rules always override conventions.
     for rule in rules:
         if fnmatch.fnmatch(normalized, rule.pattern):
             return rule.authority
-    return 'reference'
+    return _built_in_authority(normalized) or 'reference'
 
 
 def iter_text_files(root: Path) -> Iterable[Path]:
@@ -223,7 +289,7 @@ def iter_text_files(root: Path) -> Iterable[Path]:
             yield path
 
 
-def _search(pattern: PatternSpec, line: str) -> str | None:
+def search_pattern(pattern: PatternSpec, line: str) -> str | None:
     if pattern.match == 'substring':
         index = line.casefold().find(pattern.value.casefold())
         return None if index < 0 else line[index:index + len(pattern.value)]
@@ -243,14 +309,28 @@ def _inline_suppression(line: str, previous: str | None, rule_id: str) -> tuple[
     return None
 
 
-def _config_suppression(path: str, rule_id: str, rules: Sequence[SuppressionRule]) -> tuple[str, str] | None:
+def _config_suppression(
+    path: str,
+    rule_id: str,
+    rules: Sequence[SuppressionRule],
+    *,
+    today: date,
+) -> tuple[str, str, bool] | None:
     for rule in rules:
         if rule.rule_id == rule_id and fnmatch.fnmatch(path, rule.path):
-            return f'config:{rule.path}', rule.reason
+            expired = rule.expires is not None and today > rule.expires
+            reason = rule.reason
+            if expired:
+                reason = f'{reason} (expired {rule.expires.isoformat()})'
+            return f'config:{rule.path}', reason, expired
     return None
 
 
-def _context(lines: list[str], index: int, count: int) -> tuple[tuple[tuple[int, str], ...], tuple[tuple[int, str], ...]]:
+def _context(
+    lines: list[str],
+    index: int,
+    count: int,
+) -> tuple[tuple[tuple[int, str], ...], tuple[tuple[int, str], ...]]:
     if count <= 0:
         return (), ()
     before = tuple((i + 1, lines[i]) for i in range(max(0, index - count), index))
@@ -267,6 +347,7 @@ def scan(
     door: str | None = None,
     included_paths: set[str] | None = None,
     context: int = 1,
+    today: date | None = None,
 ) -> ScanResult:
     findings: list[Finding] = []
     suppressed_findings: list[Finding] = []
@@ -274,6 +355,7 @@ def scan(
     door = door.replace('\\', '/') if door else None
     included = {p.replace('\\', '/') for p in included_paths} if included_paths is not None else None
     suppressions = suppressions or []
+    today = today or date.today()
 
     for path in iter_text_files(root):
         rel = path.relative_to(root).as_posix()
@@ -293,24 +375,46 @@ def scan(
             before, after = _context(lines, index, context)
             for truth in truths:
                 for pattern in truth.stale_patterns:
-                    matched = _search(pattern, line)
+                    matched = search_pattern(pattern, line)
                     if matched is None:
                         continue
+
                     historical = authority in HISTORICAL_AUTHORITIES
                     kind = 'harmless_ghost' if historical else 'current_drift'
                     score = 0 if historical else truth.severity
-                    suppression = _inline_suppression(line, previous, truth.rule_id)
-                    if suppression is None:
-                        suppression = _config_suppression(rel, truth.rule_id, suppressions)
+
+                    inline = _inline_suppression(line, previous, truth.rule_id)
+                    config_suppression = None
+                    if inline is None:
+                        config_suppression = _config_suppression(
+                            rel, truth.rule_id, suppressions, today=today
+                        )
+
+                    suppression_source = None
+                    suppression_reason = None
+                    suppressed = False
+
+                    if inline is not None:
+                        suppression_source, suppression_reason = inline
+                        suppressed = True
+                    elif config_suppression is not None:
+                        suppression_source, suppression_reason, expired = config_suppression
+                        if expired and not historical:
+                            kind = 'review'
+                            score = 0
+                        elif not expired:
+                            suppressed = True
+
                     finding = Finding(
                         rel, index + 1, line.strip(), truth.rule_id, truth.description,
                         truth.canonical, matched, authority,
-                        'suppressed' if suppression else kind,
-                        0 if suppression else score, before, after,
-                        suppression[0] if suppression else None,
-                        suppression[1] if suppression else None,
+                        'suppressed' if suppressed else kind,
+                        0 if suppressed else score,
+                        before, after,
+                        suppression_source, suppression_reason,
+                        truth.canonical_source, truth.introduced, truth.reason,
                     )
-                    (suppressed_findings if suppression else findings).append(finding)
+                    (suppressed_findings if suppressed else findings).append(finding)
 
     return ScanResult(tuple(findings), tuple(suppressed_findings), file_count)
 
