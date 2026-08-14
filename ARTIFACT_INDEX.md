@@ -13,6 +13,7 @@ This file helps readers understand the purpose of the repository without guessin
 
 | Artifact | Demonstrates | Status |
 |---|---|---|
+| `tools/repo-drift-scanner/` | Runnable Python utility for authority-aware stale-truth detection, historical preservation, machine-readable output, tests, and deterministic scoring | Published / runnable |
 | `TESSER_INGESTION_SPINE_CASE.md` | Model-independent repository ingestion, provenance, source authority, deterministic chunking, testing boundaries, and explicit non-goals | Published |
 | `MONITORING_EDGE_ALIGNMENT_CASE.md` | Monitoring/security interaction, false-positive analysis, corrective action, and reliability discipline | Published |
 | `ARCHITECTURE_OVERVIEW.md` | High-level production environment architecture, trust boundaries, and intentional omissions | Published |
@@ -23,12 +24,20 @@ This file helps readers understand the purpose of the repository without guessin
 
 ## Artifact Categories
 
+### Runnable Utilities
+
+Small public tools that can be cloned, run, inspected, and tested without access to private Nightcoder Designs systems.
+
+Current artifacts:
+- `tools/repo-drift-scanner/` — deterministic repository truth-drift scanner with a fictional haunted-repository demo
+
 ### AI / Data / Knowledge-System Proof
 
 Artifacts showing implemented work around model-independent intelligence infrastructure, source ingestion, provenance, structured knowledge, retrieval, and related system boundaries.
 
 Current artifacts:
 - `TESSER_INGESTION_SPINE_CASE.md`
+- `tools/repo-drift-scanner/` — a small public experiment applying source-authority ideas without using an AI model
 
 ### Reliability / Monitoring Proof
 
@@ -65,7 +74,7 @@ Current artifacts:
 
 As real work becomes mature enough to publish safely, this repository may include:
 
-- small working public utilities
+- additional small working public utilities
 - sanitized automation / agent case studies
 - Base / Ethereum / Web3 technical experiments
 - API and developer-tool proof
