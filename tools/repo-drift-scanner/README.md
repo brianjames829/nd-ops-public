@@ -1,54 +1,175 @@
-# Repo Drift Scanner v0.3.1
+# Repo Drift Scanner v0.3.2
 
 > The archive remembers too much.
 
 Repo Drift Scanner is a deterministic Python utility for detecting stale repository truth and validating explicit repository contracts.
 
-v0.3 introduced repository contract validation. v0.3.1 is a focused source-coverage hardening release driven by an external public-repository benchmark.
+v0.3 introduced repository contract validation. v0.3.1 added source-coverage visibility after a real `.rst` miss. v0.3.2 hardens the scanner against **self-reference and evidence-domain mistakes** discovered during external and self-scanning evaluation.
 
 No LLM, embeddings, semantic guessing, network service, or third-party Python package is required.
 
 This is a public Nightcoder Designs experiment / utility, not a validated commercial product name.
 
-## Why v0.3.1 exists
+For cross-model or maintainer continuity, read **[`AI_HANDOFF.md`](AI_HANDOFF.md)** after this file.
 
-An external benchmark against unrelated public repositories exposed a simple but important failure mode:
+## Why v0.3.2 exists
 
-```text
-important source exists
-+ scanner does not support that format
-= scan may look clean without inspecting the source
-```
-
-A public Python project used `README.rst` for its primary documentation. The repository's current package metadata declared a newer Python support floor while that README still described an older one. The v0.3 matching logic could detect the contradiction, but `.rst` was not in the scanner's text-format allowlist, so the file was never inspected.
-
-v0.3.1 fixes that class of failure without responding by scanning every file type indiscriminately.
-
-## What changed in v0.3.1
-
-### reStructuredText support
-
-`.rst` is now scanned by the normal stale-truth engine.
+External use exposed three related self-reference failures:
 
 ```text
-README.rst
-CHANGELOG.rst
-MIGRATION_HISTORY.rst
+config contains stale_patterns
++ scanner scans config
+= false current drift
+
+previous report contains old finding text
++ scanner scans report
+= fixed drift can resurrect
+
+test fixture contains forbidden/stale literal
++ scanner treats fixture as production evidence
+= self-reference false positive
 ```
 
-The built-in historical filename convention is also format-independent now, so names such as:
+v0.3.2 fixes the class instead of adding one-off suppressions.
+
+It also closes two source-format gaps found on unrelated repositories:
 
 ```text
-*_LOG.rst
-*_ARCHIVE.rst
-*_HISTORY.rst
+README.markdown
+
+go.mod
 ```
 
-receive the same fallback historical treatment as their Markdown equivalents unless an explicit authority rule overrides it.
+## What changed in v0.3.2
 
-### Important extensionless text surfaces
+### Evidence-domain boundaries
 
-Common high-value extensionless files are now scanned when UTF-8 decodable:
+The scanner now distinguishes:
+
+```text
+SCANNED
+participated in evidence evaluation
+
+IGNORED
+known text/source candidate, but unsupported or undecodable
+
+EXCLUDED
+intentionally outside this scan's evidence domain
+```
+
+That distinction matters. Excluded does not mean historical, harmless, or clean. It means **not evidence for this scan**.
+
+### Active config auto-exclusion
+
+If the active `--config` file is inside the scan root, it is excluded automatically.
+
+This prevents rules like:
+
+```json
+"stale_patterns": ["MongoDB"]
+```
+
+from accusing their own config file of containing `MongoDB`.
+
+### Active output auto-exclusion
+
+If `--output` points inside the scan root, that active report path is excluded automatically.
+
+This prevents a previous JSON/Markdown/text report from reintroducing stale matched text after the repository itself has been corrected.
+
+### Configurable exclusions
+
+Config files may declare repository-relative glob exclusions:
+
+```json
+{
+  "exclude_paths": [
+    "tests/fixtures/**",
+    "generated/**",
+    "reports/**"
+  ]
+}
+```
+
+CLI exclusions are also available and repeatable:
+
+```bash
+python ghost_scan.py . \
+  --config rules.json \
+  --exclude 'tests/fixtures/**' \
+  --exclude 'generated/**'
+```
+
+### Exclusions are visible
+
+Coverage reports now show exclusion boundaries and match counts rather than silently dropping paths.
+
+Example text output:
+
+```text
+COVERAGE
+SCOPE                 full
+FILES DISCOVERED      286
+FILES SCANNED         238
+FILES IGNORED          42
+FILES EXCLUDED           6
+
+EVIDENCE-DOMAIN EXCLUSIONS
+auto:config               1  rules.json
+config:exclude_paths       5  tests/fixtures/**
+```
+
+JSON reports include `coverage.files_excluded` and `coverage.excluded_by_rule`.
+
+Markdown reports include an `Evidence-domain exclusions` table.
+
+### Contract / exclusion conflicts fail loudly
+
+If a direct explicit contract target is also excluded, the configuration fails with exit `3`.
+
+Example:
+
+```text
+exclude generated/CURRENT_STATE.md
++
+current_surface contract targets generated/CURRENT_STATE.md
+=
+configuration error
+```
+
+The scanner does not guess which instruction wins.
+
+### `.markdown` support
+
+Files such as:
+
+```text
+README.markdown
+CHANGELOG.markdown
+```
+
+are now scanned by the normal stale-truth engine.
+
+### `go.mod` support
+
+`go.mod` is now treated as a supported high-value text surface because it can carry authoritative module/toolchain/dependency state.
+
+## What v0.3.1 added
+
+v0.3.1 was triggered by an external public-repository benchmark where a primary `README.rst` retained an older runtime support statement while package metadata declared a newer support floor.
+
+v0.3.1 added:
+
+- `.rst` scanning
+- important extensionless text surfaces
+- source-coverage accounting
+- ignored-type summaries
+- high-value ignored surfaces as non-blocking REVIEW
+- format-independent historical `_LOG` / `_ARCHIVE` / `_HISTORY` conventions
+
+## Important extensionless text surfaces
+
+Common high-value extensionless files are scanned when UTF-8 decodable:
 
 ```text
 README
@@ -60,40 +181,24 @@ ROADMAP
 ARCHITECTURE
 ```
 
-### Coverage accounting
+## Coverage accounting
 
-Every CLI report now distinguishes what the scanner discovered from what it actually scanned.
-
-Text output includes a section like:
-
-```text
-COVERAGE
-SCOPE                 full
-FILES DISCOVERED      286
-FILES SCANNED         241
-FILES IGNORED         45
-
-IGNORED BY TYPE
-.adoc  2
-.cfg   4
-.ini   5
-.rs    34
-```
+Every CLI report distinguishes what the scanner discovered from what it actually scanned.
 
 `FILES DISCOVERED` means text/source candidates from a broad candidate-format set, not every binary asset in the repository.
 
 Coverage accounting respects:
 
-- full repository scans;
-- `--door`;
-- `--changed-only`;
-- `--changed-since <ref>`.
-
-JSON reports include a structured `coverage` object. Markdown reports include a `## Coverage` section.
+- full repository scans
+- `--door`
+- `--changed-only`
+- `--changed-since <ref>`
+- configured and CLI evidence-domain exclusions
+- active config/output auto-exclusions
 
 ### High-value ignored surfaces become REVIEW signals
 
-If a likely current/authority-bearing surface is text-like but unsupported, the scanner does not call the repository clean and does not invent a violation.
+If a likely authority-bearing text surface is unsupported, the scanner does not call the repository clean and does not invent a violation.
 
 Example:
 
@@ -113,26 +218,15 @@ Finding:  high-value repository surface is not scanned by the current text-forma
 
 Coverage reviews are non-blocking. They do not cause exit `2` by themselves.
 
-This is the intended distinction:
-
-```text
-explicit contract broken
-→ VIOLATION
-→ blocking
-
-important source was not inspected
-→ REVIEW
-→ non-blocking human judgment
-```
-
 An image such as `README.png` is not treated as an ignored text surface merely because its filename begins with README.
 
-## Supported text surfaces
+## Supported stale-text surfaces
 
-The stale-truth scanner currently scans these extensions:
+The scanner currently scans these extensions:
 
 ```text
 .md
+.markdown
 .rst
 .txt
 .json
@@ -143,13 +237,17 @@ The stale-truth scanner currently scans these extensions:
 .toml
 ```
 
-It also scans the high-value extensionless filenames listed above.
+Special supported filename:
 
-Other text/source formats may appear in coverage accounting without being scanned by the stale-text engine. That is deliberate. v0.3.1 exposes the gap rather than silently widening the parser surface based on imagination.
+```text
+go.mod
+```
+
+High-value extensionless filenames are listed above.
+
+Other text/source formats may appear in coverage accounting without being stale-text scanned. That is deliberate.
 
 ## Core model
-
-The scanner now has two deterministic layers:
 
 ```text
 text drift
@@ -160,6 +258,7 @@ text drift
 + output ownership
 + append-only history
 + source coverage visibility
++ evidence-domain boundaries
 = repository continuity validation
 ```
 
@@ -167,7 +266,7 @@ v0.2-style text rules remain backward-compatible.
 
 ## Contract types
 
-v0.3 retains six explicit contract types:
+The scanner retains six explicit contract types:
 
 1. `authority`
 2. `structured_assertion`
@@ -312,6 +411,30 @@ Explicit modes:
 
 No fuzzy or semantic matching is performed.
 
+### Rule quality matters
+
+A broad rule such as:
+
+```text
+Python 2
+```
+
+can match legitimate narrative like:
+
+```text
+dropped support for Python 2
+```
+
+Prefer tighter phrases such as:
+
+```text
+supports Python 2
+requires Python 2
+Python 2 is supported
+```
+
+Do not add semantic AI merely to rescue sloppy deterministic rules.
+
 ## Rule provenance
 
 Truth rules can explain where they came from:
@@ -345,6 +468,16 @@ archives/**
 *_HISTORY.<supported text format>
 ```
 
+Important:
+
+```text
+authority
+!=
+exclusion
+```
+
+Marking a test fixture `reference` does not remove it from stale-text evaluation. Use `exclude_paths` / `--exclude` when a path is outside the evidence domain.
+
 ## Suppressions
 
 Inline and config suppressions remain rule-specific.
@@ -376,14 +509,15 @@ The legacy `--json` alias remains available.
 
 Reports include:
 
-- current drift;
-- contract violations;
-- review signals;
-- historical ghosts;
-- suppressions;
-- rule/authority/contract summaries;
-- declared provenance;
-- source coverage accounting.
+- current drift
+- contract violations
+- review signals
+- historical ghosts
+- suppressions
+- rule/authority/contract summaries
+- declared provenance
+- source coverage accounting
+- evidence-domain exclusions
 
 The scanner remains side-effect-free unless `--output` is explicitly supplied.
 
@@ -401,21 +535,19 @@ and:
 
 No remote fetch is performed.
 
-`--no-contracts` skips configured contracts but still performs text scanning and coverage accounting.
+`--no-contracts` skips configured contracts but still performs text scanning, evidence-boundary handling, and coverage accounting.
 
 ## Exit codes
 
-- `0` — completed with no current drift or contract violation;
-- `2` — current drift and/or contract violation exists;
-- `3` — usage/config/Git/operational input error.
+- `0` — completed with no current drift or contract violation
+- `2` — current drift and/or contract violation exists
+- `3` — usage/config/Git/operational input error
 
-Review signals, historical ghosts, and valid suppressions do not fail a scan by themselves.
+Review signals, historical ghosts, valid suppressions, ignored candidates, and exclusions do not fail a scan by themselves.
 
-## Validation
+## Validation receipts
 
-### v0.3 baseline
-
-Before v0.3 publication, a focused development harness ran:
+### v0.3 focused development harness
 
 ```text
 53 tests
@@ -423,9 +555,7 @@ Before v0.3 publication, a focused development harness ran:
 0 failed
 ```
 
-### v0.3.1 hardening
-
-The source-coverage changes were then exercised through a separate focused regression harness:
+### v0.3.1 focused hardening harness
 
 ```text
 15 tests
@@ -433,21 +563,40 @@ The source-coverage changes were then exercised through a separate focused regre
 0 failed
 ```
 
-The v0.3.1 harness covered:
+### Current integrated public tree before v0.3.2
 
-- `.rst` scanning;
-- extensionless `README` and `VERSION` scanning;
-- format-independent historical filename conventions;
-- coverage counts;
-- ignored-type summaries;
-- high-value unsupported text surfaces;
-- binary README-like files not becoming false coverage reviews;
-- `--door`/filtered coverage behavior;
-- JSON/Markdown/text coverage rendering;
-- replay of the external `.rst` documentation miss;
-- preservation of the original v0.2 haunted-demo behavior.
+An independent outside tester reported:
 
-The original v0.2 behavior remains:
+```text
+60 tests
+60 passed
+0 failed
+```
+
+from `python -m unittest discover` on the then-current v0.3.1 public tree.
+
+Keep this separate from the release-specific harness counts.
+
+### v0.3.2 focused development regression
+
+Before publication, the v0.3.2 candidate ran a focused 42-test local set covering:
+
+- prior v0.3 contract behaviors
+- prior v0.3.1 `.rst` / coverage / Faker regression behaviors
+- active config self-scan prevention
+- active output self-poison prevention
+- config `exclude_paths`
+- CLI `--exclude`
+- visible exclusions in JSON/text coverage
+- exclude-vs-direct-contract conflict handling
+- `.markdown` support
+- `go.mod` support
+- `--no-contracts` exclusion behavior
+- v0.3.2 version reporting
+
+This is a focused development receipt. It is not yet an independent post-publication clone/test receipt.
+
+The original v0.2 haunted-demo behavior remains a backward-compatibility target:
 
 ```text
 CURRENT DRIFT        2
@@ -456,40 +605,55 @@ SUPPRESSED           2
 HAUNTING SCORE       17
 ```
 
-## External benchmark lesson
+## External evaluation lessons
 
-The first small external benchmark was intentionally conservative. It showed three useful behaviors:
+Small external evaluations have already produced useful classes of evidence:
 
 ```text
-historical release text
-→ preserved as history
+Faker
+→ real README.rst / package-metadata mismatch caught
 
-ambiguous roadmap/current-state tension
-→ REVIEW, not fake certainty
+ty
+→ historical alpha wording preserved
 
-important unsupported README.rst
-→ exposed a source-coverage blind spot
+Devika
+→ ambiguity stayed REVIEW
+
+Requests
+→ historical release/version narrative preserved as history; broad rules showed tuning noise
+
+gtop
+→ manifest/README support-floor mismatch stayed REVIEW
+
+Redigo
+→ README.markdown and go.mod gaps exposed
+
+min-sized-rust
+→ unsupported .rs files counted without review spam
+
+nd-ops-public self-scan
+→ test fixture self-reference exposed the need for exclusions
 ```
 
-v0.3.1 addresses the third result.
-
-It does not turn that tiny benchmark into a broad precision claim.
+These are development observations, not a broad statistical precision claim.
 
 ## Deliberate limitations
 
 Repo Drift Scanner still does not:
 
-- use an LLM, embeddings, or semantic similarity;
-- determine philosophical agreement between arbitrary prose documents;
-- infer canonical truth automatically;
-- rewrite files;
-- create commits or pull requests;
-- contact network services;
-- prove arbitrary program behavior;
-- scan every text/source format;
-- treat an unsupported source type as a hard violation merely because it exists.
+- use an LLM, embeddings, or semantic similarity
+- determine philosophical agreement between arbitrary prose documents
+- infer canonical truth automatically
+- rewrite files
+- create commits or pull requests
+- contact network services
+- prove arbitrary program behavior
+- scan every text/source format
+- treat an unsupported source type as a hard violation merely because it exists
+- guarantee good results from bad rule packs
+- prove complex glob-overlap conflicts between every contract pattern and every exclusion pattern
 
-Coverage tells you what the scanner did not inspect. It does not pretend those files are wrong.
+Coverage tells you what the scanner did not inspect. Exclusions tell you what was deliberately outside the evidence domain. Neither should impersonate a clean scan.
 
 ## Public/private boundary
 
@@ -505,4 +669,43 @@ private repositories
 private continuity validation
 ```
 
-The public repository contains generic machinery and fictional examples. Private truth and private repository content remain private.
+The public repository contains generic machinery and fictional/public-safe examples. Private Nightcoder Designs truth, private repository contents, and internal Tesser intelligence remain private.
+
+## Continuity / handoff
+
+For another AI model or maintainer, use:
+
+**[`AI_HANDOFF.md`](AI_HANDOFF.md)**
+
+It contains:
+
+- release history
+- current architecture
+- exact design constraints
+- validation boundaries
+- external benchmark lessons
+- known limitations
+- safe change protocol
+- next-phase measurement plan
+- a copy/paste continuation prompt for ChatGPT, Gemini, Grok, Claude, or another model
+
+## Next phase
+
+After v0.3.2, default to **measurement rather than feature expansion**.
+
+Track across unrelated public repos and the private ND repo set:
+
+```text
+true current drift
+false current drift
+true contract violations
+false contract violations
+useful reviews
+review noise
+historical ghosts preserved
+high-value coverage misses
+suppressions required
+repo-specific rules required
+```
+
+Let measured failure classes decide whether a later release is justified.
