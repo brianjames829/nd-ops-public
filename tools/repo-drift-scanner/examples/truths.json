@@ -18,15 +18,27 @@
       "id": "api-version",
       "description": "Current public API version",
       "canonical": "v3",
-      "stale_patterns": ["API v1", "API v2"],
+      "stale_patterns": [
+        {"value": "API v1", "match": "phrase"},
+        {"value": "API v2", "match": "phrase"}
+      ],
       "severity": 7
     },
     {
       "id": "project-name",
       "description": "Current project identity",
       "canonical": "Acme Relay",
-      "stale_patterns": ["Project Rocket"],
+      "stale_patterns": [
+        {"value": "Project\\s+Rocket", "match": "regex"}
+      ],
       "severity": 5
+    }
+  ],
+  "suppressions": [
+    {
+      "path": "MIGRATION.md",
+      "rule_id": "database",
+      "reason": "Migration note intentionally names the previous database."
     }
   ]
 }
