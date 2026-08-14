@@ -1,0 +1,28 @@
+{
+  "authority_rules": [
+    {"pattern": "archive/**", "authority": "historical"},
+    {"pattern": "README.md", "authority": "current"}
+  ],
+  "contracts": [
+    {
+      "id": "archive-authority",
+      "type": "authority",
+      "description": "Archived plans stay historical",
+      "paths": ["archive/**"],
+      "must_be": "historical",
+      "source": "repository authority policy",
+      "reason": "Preserved history must not inherit current authority."
+    },
+    {
+      "id": "current-readme",
+      "type": "current_surface",
+      "description": "README remains a current project surface",
+      "path": "README.md",
+      "must_be_authority": "current",
+      "required_patterns": ["Acme Relay is the current project name"],
+      "review_patterns": [
+        {"value": "^## 2025", "match": "regex"}
+      ]
+    }
+  ]
+}
