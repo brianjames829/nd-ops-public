@@ -324,6 +324,26 @@ python -m unittest discover -s tests -v
 
 The v0.2 implementation currently has **29 focused tests** covering authority behavior, matching modes, suppressions, context, reporting, config validation, Git filtering, scan filtering, exit behavior, and scoring.
 
+## Initial real-use validation
+
+After the controlled demo/test suite, v0.2 was evaluated against a **small, focused set of real private Nightcoder Designs source material** using private rules derived from current governing state.
+
+The initial focused run produced:
+
+```text
+CURRENT DRIFT        2
+HARMLESS GHOSTS      1
+SUPPRESSED           1
+```
+
+Manual review classified both reported current-drift findings as genuine stale-current statements. The historical finding was intentionally preserved, and the suppressed finding was an intentional current-file reference to a superseded concept.
+
+After correcting the two stale-current statements in a test copy, the same focused rules returned zero current drift.
+
+This is **not** a claim of statistically meaningful 100% precision. Two current-drift findings are far too small a sample. It is evidence that the deterministic authority + declared-truth model can catch real continuity errors in the system that motivated the tool.
+
+Broader private multi-repository evaluation remains the next validation step. Private rules and private repository contents are not published as part of that evaluation.
+
 ## Deliberate limitations
 
 v0.2 deliberately does not:
