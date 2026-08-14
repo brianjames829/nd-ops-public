@@ -163,7 +163,27 @@ v0.3.2 adds explicit evidence-domain boundaries:
 - `.markdown` support
 - `go.mod` support
 
-A local focused v0.3.2 regression set exercised **42 tests** across the v0.3 contract behaviors, v0.3.1 coverage/Faker regression behaviors, and 11 new boundary tests. That is a focused development receipt, not yet a claim that an independently cloned post-publication v0.3.2 tree passed every public test on another machine.
+A local focused v0.3.2 regression set exercised **42 tests** across the v0.3 contract behaviors, v0.3.1 coverage/Faker regression behaviors, and 11 new boundary tests.
+
+After reconstructing the current public test modules together in the local verification tree, an integrated run recorded:
+
+```text
+71 tests
+71 passed
+0 failed
+```
+
+Keep those receipts distinct:
+
+```text
+v0.3 focused development          53/53
+v0.3.1 focused hardening          15/15
+external integrated v0.3.1        60/60
+v0.3.2 focused development        42/42
+v0.3.2 integrated local shape     71/71
+```
+
+The 71/71 result is a local integrated verification from the current public code/test surfaces available during the v0.3.2 publishing session. It is **not** an independent third-party fresh-clone receipt of the final post-publication commit. A future external clone/test is therefore still useful evidence rather than redundant ceremony.
 
 ## Current module map
 
