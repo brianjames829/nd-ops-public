@@ -13,7 +13,7 @@ This file helps readers understand the purpose of the repository without guessin
 
 | Artifact | Demonstrates | Status |
 |---|---|---|
-| `tools/repo-drift-scanner/` | Runnable Python utility for stale-truth detection plus deterministic repository contracts: authority, structured state, lifecycle, current surfaces, output ownership, append-only history, review signals, machine-readable output, and tests | Published / runnable — v0.3 |
+| `tools/repo-drift-scanner/` | Runnable Python utility for stale-truth detection plus deterministic repository contracts, source authority, structured state, lifecycle, current surfaces, output ownership, append-only history, review signals, source-coverage accounting, machine-readable output, and tests | Published / runnable — v0.3.1 |
 | `TESSER_INGESTION_SPINE_CASE.md` | Model-independent repository ingestion, provenance, source authority, deterministic chunking, testing boundaries, and explicit non-goals | Published |
 | `MONITORING_EDGE_ALIGNMENT_CASE.md` | Monitoring/security interaction, false-positive analysis, corrective action, and reliability discipline | Published |
 | `ARCHITECTURE_OVERVIEW.md` | High-level production environment architecture, trust boundaries, and intentional omissions | Published |
@@ -29,7 +29,7 @@ This file helps readers understand the purpose of the repository without guessin
 Small public tools that can be cloned, run, inspected, and tested without access to private Nightcoder Designs systems.
 
 Current artifacts:
-- `tools/repo-drift-scanner/` — Repo Drift Scanner v0.3, a deterministic stale-truth and repository-contract validator with fictional examples
+- `tools/repo-drift-scanner/` — Repo Drift Scanner v0.3.1, a deterministic stale-truth and repository-contract validator with source-coverage visibility and fictional examples
 
 ### AI / Data / Knowledge-System Proof
 
