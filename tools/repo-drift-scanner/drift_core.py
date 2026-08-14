@@ -9,10 +9,13 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 DEFAULT_EXCLUDES = {'.git', '.venv', 'venv', '__pycache__', 'node_modules'}
-DEFAULT_EXTENSIONS = {'.md', '.rst', '.txt', '.json', '.jsonl', '.yaml', '.yml', '.py', '.toml'}
+DEFAULT_EXTENSIONS = {
+    '.md', '.markdown', '.rst', '.txt', '.json', '.jsonl', '.yaml', '.yml', '.py', '.toml'
+}
 DEFAULT_TEXT_FILENAMES = {
     'README', 'CHANGELOG', 'SECURITY', 'VERSION', 'CONTRIBUTING', 'ROADMAP', 'ARCHITECTURE'
 }
+SPECIAL_TEXT_FILENAMES = {'go.mod'}
 MATCH_MODES = {'substring', 'phrase', 'regex'}
 HISTORICAL_AUTHORITIES = {'historical', 'archive'}
 HISTORICAL_DIR_NAMES = {'history', 'archive', 'archives'}
@@ -162,8 +165,27 @@ def _load_root(path: Path) -> dict:
             f'config JSON is invalid at line {exc.lineno}, column {exc.colno}: {exc.msg}'
         ) from exc
     root = _expect_dict(data, 'config')
-    _reject_unknown(root, {'authority_rules', 'truths', 'suppressions', 'contracts'}, 'config')
+    _reject_unknown(
+        root,
+        {'authority_rules', 'truths', 'suppressions', 'contracts', 'exclude_paths'},
+        'config',
+    )
     return root
+
+
+def load_exclude_paths(path: Path) -> list[str]:
+    root = _load_root(path)
+    values = _expect_list(root.get('exclude_paths', []), 'exclude_paths')
+    result = []
+    for index, raw in enumerate(values):
+        value = _expect_string(raw, f'exclude_paths[{index}]').replace('\\', '/')
+        if value.startswith('/'):
+            raise ConfigError(f'exclude_paths[{index}] must be repository-relative')
+        parts = [part for part in value.split('/') if part]
+        if '..' in parts:
+            raise ConfigError(f'exclude_paths[{index}] must not escape the repository root')
+        result.append(value)
+    return result
 
 
 def load_config(path: Path) -> tuple[list[AuthorityRule], list[TruthRule], list[SuppressionRule]]:
@@ -275,7 +297,6 @@ def _built_in_authority(rel_path: str) -> str | None:
 
 def classify_authority(rel_path: str, rules: Iterable[AuthorityRule]) -> str:
     normalized = rel_path.replace('\\', '/')
-    # Explicit project rules always override conventions.
     for rule in rules:
         if fnmatch.fnmatch(normalized, rule.pattern):
             return rule.authority
@@ -286,6 +307,7 @@ def _is_supported_text_path(path: Path) -> bool:
     return (
         path.suffix.lower() in DEFAULT_EXTENSIONS
         or (not path.suffix and path.name.upper() in DEFAULT_TEXT_FILENAMES)
+        or path.name.casefold() in SPECIAL_TEXT_FILENAMES
     )
 
 
