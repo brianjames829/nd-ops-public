@@ -6,22 +6,20 @@ import sys
 from pathlib import Path
 
 from drift_contracts import (
-    ContractEvaluationError,
-    ContractFinding,
-    ContractResult,
-    evaluate_contracts,
-    load_contracts,
+    ContractEvaluationError, ContractFinding, ContractResult,
+    evaluate_contracts, load_contracts,
 )
 from drift_core import (
     AuthorityRule, ConfigError, Finding, PatternSpec, ScanResult,
     SuppressionRule, TruthRule, classify_authority, haunting_label,
-    load_config, scan,
+    iter_text_files, load_config, load_exclude_paths, scan,
 )
 from drift_coverage import analyze_coverage, decorate_report
 from drift_git import GitError, changed_only_paths, changed_since_paths
 from drift_report import render_json, render_markdown, render_text
+from drift_scope import build_boundary
 
-VERSION = '0.3.1'
+VERSION = '0.3.2'
 
 
 class DriftArgumentParser(argparse.ArgumentParser):
@@ -38,9 +36,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('root', type=Path, help='Repository or directory to inspect')
     parser.add_argument(
         '--config', type=Path, required=True,
-        help='JSON file containing authority, truth, suppression, and optional contract rules',
+        help='JSON file containing authority, truth, suppression, exclusion, and optional contract rules',
     )
     parser.add_argument('--door', help='Inspect one relative file path instead of the whole tree')
+    parser.add_argument(
+        '--exclude', action='append', default=[], metavar='GLOB',
+        help='Exclude a repository-relative path/glob from this scan; may be repeated',
+    )
     parser.add_argument(
         '--context', type=int, default=1,
         help='Context lines before/after each text finding (default: 1)',
@@ -85,21 +87,22 @@ def _coverage_findings(coverage) -> tuple[ContractFinding, ...]:
             message = 'high-value repository surface is not scanned by the current text-format allowlist'
         findings.append(
             ContractFinding(
-                'source-coverage',
-                'coverage',
-                'High-value source coverage',
-                'review',
-                path,
-                message,
-                {
-                    'scope': coverage.scope,
-                    'ignored_by_type': dict(coverage.ignored_by_type),
-                },
+                'source-coverage', 'coverage', 'High-value source coverage', 'review',
+                path, message,
+                {'scope': coverage.scope, 'ignored_by_type': dict(coverage.ignored_by_type)},
                 None,
                 'A clean scan should not silently imply that an important README/state/roadmap-like surface was inspected when it was not.',
             )
         )
     return tuple(findings)
+
+
+def _filtered_scan_paths(root: Path, scope_paths: set[str] | None, boundary) -> set[str]:
+    supported = {path.relative_to(root).as_posix() for path in iter_text_files(root)}
+    if scope_paths is not None:
+        normalized = {p.replace('\\', '/') for p in scope_paths}
+        supported.intersection_update(normalized)
+    return {rel for rel in supported if not boundary.excludes(rel)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -116,14 +119,27 @@ def main(argv: list[str] | None = None) -> int:
         print(f'ERROR: root is not a directory: {root}', file=sys.stderr)
         return 3
 
-    try:
-        authorities, truths, suppressions = load_config(args.config)
-        included = None
-        if args.changed_only:
-            included = changed_only_paths(root)
-        elif args.changed_since:
-            included = changed_since_paths(root, args.changed_since)
+    config_path = args.config.resolve()
+    output_path = args.output.resolve() if args.output else None
 
+    try:
+        configured_excludes = load_exclude_paths(config_path)
+        boundary = build_boundary(
+            root,
+            config_path=config_path,
+            output_path=output_path,
+            configured_patterns=configured_excludes,
+            cli_patterns=args.exclude,
+        )
+
+        authorities, truths, suppressions = load_config(config_path)
+        scope_paths = None
+        if args.changed_only:
+            scope_paths = changed_only_paths(root)
+        elif args.changed_since:
+            scope_paths = changed_since_paths(root, args.changed_since)
+
+        included = _filtered_scan_paths(root, scope_paths, boundary)
         result = scan(
             root, authorities, truths, suppressions,
             door=args.door, included_paths=included, context=args.context,
@@ -131,38 +147,31 @@ def main(argv: list[str] | None = None) -> int:
 
         contract_result = ContractResult(())
         if not args.no_contracts:
-            contracts = load_contracts(args.config)
+            contracts = load_contracts(config_path)
             baseline = args.contract_baseline or args.changed_since
             contract_result = evaluate_contracts(
-                root, authorities, contracts, baseline=baseline,
+                root, authorities, contracts, baseline=baseline, boundary=boundary,
             )
 
         coverage = analyze_coverage(
             root,
             door=args.door,
-            included_paths=included,
+            included_paths=scope_paths,
+            boundary=boundary,
         )
         contract_result = ContractResult(
             contract_result.findings + _coverage_findings(coverage)
         )
-    except (ConfigError, GitError, ContractEvaluationError) as exc:
+    except (ConfigError, GitError, ContractEvaluationError, ValueError) as exc:
         print(f'ERROR: {exc}', file=sys.stderr)
         return 3
 
     if report == 'json':
         rendered = render_json(result, root, contract_result=contract_result)
     elif report == 'markdown':
-        rendered = render_markdown(
-            result,
-            contract_result=contract_result,
-            show_suppressed=args.show_suppressed,
-        )
+        rendered = render_markdown(result, contract_result=contract_result, show_suppressed=args.show_suppressed)
     else:
-        rendered = render_text(
-            result,
-            contract_result=contract_result,
-            show_suppressed=args.show_suppressed,
-        ) + '\n'
+        rendered = render_text(result, contract_result=contract_result, show_suppressed=args.show_suppressed) + '\n'
 
     rendered = decorate_report(rendered, report, coverage)
 
