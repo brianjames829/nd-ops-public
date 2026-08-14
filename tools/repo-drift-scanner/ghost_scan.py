@@ -7,6 +7,7 @@ from pathlib import Path
 
 from drift_contracts import (
     ContractEvaluationError,
+    ContractFinding,
     ContractResult,
     evaluate_contracts,
     load_contracts,
@@ -16,10 +17,11 @@ from drift_core import (
     SuppressionRule, TruthRule, classify_authority, haunting_label,
     load_config, scan,
 )
+from drift_coverage import analyze_coverage, decorate_report
 from drift_git import GitError, changed_only_paths, changed_since_paths
 from drift_report import render_json, render_markdown, render_text
 
-VERSION = '0.3.0'
+VERSION = '0.3.1'
 
 
 class DriftArgumentParser(argparse.ArgumentParser):
@@ -59,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         '--no-contracts', action='store_true',
-        help='Run only v0.2-style text drift checks and skip contract evaluation',
+        help='Run only text drift checks plus coverage accounting; skip configured contract evaluation',
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -71,6 +73,33 @@ def build_parser() -> argparse.ArgumentParser:
         help='Scan files changed between REF and HEAD',
     )
     return parser
+
+
+def _coverage_findings(coverage) -> tuple[ContractFinding, ...]:
+    undecodable = set(coverage.undecodable_supported)
+    findings = []
+    for path in coverage.high_value_ignored:
+        if path in undecodable:
+            message = 'high-value repository surface is supported by filename/type but could not be decoded as UTF-8'
+        else:
+            message = 'high-value repository surface is not scanned by the current text-format allowlist'
+        findings.append(
+            ContractFinding(
+                'source-coverage',
+                'coverage',
+                'High-value source coverage',
+                'review',
+                path,
+                message,
+                {
+                    'scope': coverage.scope,
+                    'ignored_by_type': dict(coverage.ignored_by_type),
+                },
+                None,
+                'A clean scan should not silently imply that an important README/state/roadmap-like surface was inspected when it was not.',
+            )
+        )
+    return tuple(findings)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,6 +136,15 @@ def main(argv: list[str] | None = None) -> int:
             contract_result = evaluate_contracts(
                 root, authorities, contracts, baseline=baseline,
             )
+
+        coverage = analyze_coverage(
+            root,
+            door=args.door,
+            included_paths=included,
+        )
+        contract_result = ContractResult(
+            contract_result.findings + _coverage_findings(coverage)
+        )
     except (ConfigError, GitError, ContractEvaluationError) as exc:
         print(f'ERROR: {exc}', file=sys.stderr)
         return 3
@@ -125,6 +163,8 @@ def main(argv: list[str] | None = None) -> int:
             contract_result=contract_result,
             show_suppressed=args.show_suppressed,
         ) + '\n'
+
+    rendered = decorate_report(rendered, report, coverage)
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
