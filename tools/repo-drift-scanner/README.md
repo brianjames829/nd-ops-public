@@ -1,63 +1,74 @@
-# Repo Drift Scanner v0.2
+# Repo Drift Scanner v0.3
 
 > The archive remembers too much.
 
-Repo Drift Scanner is a small, deterministic Python utility that finds statements which may have become stale after current truth changed.
+Repo Drift Scanner is a deterministic Python utility for detecting stale repository truth and validating explicit repository contracts.
 
-It is built around a deliberately simple idea:
+v0.3 keeps the v0.2 text-drift engine and adds a second layer:
 
-- **you declare current truth**;
-- **you declare source authority**;
-- the scanner finds old statements;
-- historical material is preserved instead of treated as automatically wrong;
-- intentional exceptions can be suppressed without erasing why they were allowed.
+```text
+stale text
++ source authority
++ structured state
++ lifecycle rules
++ current-surface rules
++ output ownership
++ append-only history
+= repository contract validation
+```
 
-No AI model is required. No network service is required. No third-party Python packages are required.
+No LLM, embeddings, semantic guessing, network service, or third-party Python package is required.
 
 This is a public Nightcoder Designs experiment / utility, not a validated commercial product name.
 
-## What changed in v0.2
+## What changed in v0.3
 
-v0.2 is an operational-hardening release aimed at making the scanner usable on real repositories repeatedly without becoming noisy.
+v0.2 answered:
 
-It adds:
+> Does a current file still contain text we explicitly declared stale?
 
-- backward-compatible substring matching plus opt-in `phrase` and `regex` modes;
-- rule-specific inline suppressions;
-- rule-specific config suppressions with required reasons;
-- inspectable suppressed findings;
-- one line of review context by default;
-- text, JSON, and Markdown reports;
-- summary counts by rule and authority;
-- `--changed-only` and `--changed-since <ref>` Git modes;
-- stricter, human-readable config validation;
-- stable automation-oriented exit codes;
-- expanded tests.
+v0.3 can also answer:
 
-It still does **not** infer truth, rewrite files, use an LLM, or contact external services.
+> Does the repository still satisfy explicit authority, state, lifecycle, ownership, and history contracts?
+
+New deterministic contract types:
+
+1. `authority`
+2. `structured_assertion`
+3. `lifecycle`
+4. `current_surface`
+5. `output_ownership`
+6. `append_only`
+
+v0.3 also adds:
+
+- `VIOLATION` versus non-blocking `REVIEW` findings;
+- optional truth-rule provenance (`canonical_source`, `introduced`, `reason`);
+- optional suppression expiration;
+- built-in historical conventions for `history/`, `archive/`, `archives/`, `*_LOG.md`, `*_ARCHIVE.md`, and `*_HISTORY.md`;
+- explicit authority rules that override those conventions;
+- contract findings in text, Markdown, and JSON reports;
+- `--contract-baseline <ref>` for append-only Git validation;
+- `--no-contracts` for v0.2-style text-only operation;
+- `--version`.
+
+It still does **not** infer canonical truth, rewrite files, create commits/PRs, inspect arbitrary program semantics, or decide that two long documents are philosophically inconsistent.
 
 ## Requirements
 
 - Python 3.10+
-- Git only when using the Git-aware modes
+- Git only for Git-aware scan modes and `append_only` contracts
 - zero third-party Python dependencies
 
-## Try the included haunted repository
+## Quick start: original haunted demo
 
-From this directory:
+The v0.2 demo remains backward-compatible:
 
 ```bash
 python ghost_scan.py examples/demo_repo --config examples/truths.json
 ```
 
-The demo intentionally contains:
-
-- two stale statements in a current README;
-- two legitimate old statements in an archive;
-- one config-suppressed migration reference;
-- one inline-suppressed old project-name reference.
-
-Expected summary:
+Expected core result remains:
 
 ```text
 CURRENT DRIFT        2
@@ -66,316 +77,436 @@ SUPPRESSED           2
 HAUNTING SCORE       17  [Whispering]
 ```
 
-Use `--show-suppressed` to inspect the intentionally suppressed findings:
+v0.3 adds zero contract findings because the old config contains no contracts.
+
+## Quick start: contract demo
+
+Run the included contract-only example against the same fictional repository:
 
 ```bash
-python ghost_scan.py examples/demo_repo \
-  --config examples/truths.json \
-  --show-suppressed
+python ghost_scan.py examples/demo_repo --config examples/contracts.json
 ```
+
+It verifies that archived material remains historical and that the README is treated as a current project surface.
+
+## Finding levels
+
+### `VIOLATION`
+
+An explicit deterministic contract is broken.
+
+Examples:
+
+- a historical path is classified `canonical`;
+- JSON says `public_product: true` when the declared contract requires `false`;
+- a superseded JSONL record is still `active`;
+- an undeclared generator references a protected output;
+- existing append-only history was modified.
+
+Violations cause exit `2`.
+
+### `REVIEW`
+
+A deterministic signal deserves human judgment, but the scanner does not claim it is objectively wrong.
+
+Examples:
+
+- a current-only surface contains a suspicious old heading;
+- an exception/suppression has expired;
+- an append-only contract was requested without a baseline.
+
+Review findings do **not** cause exit `2` by themselves.
+
+That distinction is intentional. The scanner should be strict where the repository can state a fact precisely and cautious where interpretation is still required.
+
+# Contract types
+
+## 1. Authority contract
+
+Use when a path or path family has a declared retrieval/continuity role.
+
+```json
+{
+  "id": "legacy-plans",
+  "type": "authority",
+  "description": "Legacy plans remain historical",
+  "paths": ["archive/**"],
+  "must_be": "historical"
+}
+```
+
+If no file matches, the contract fails by default. Set `"require_match": false` when the path is optional.
+
+Built-in historical conventions apply only when no explicit authority rule matches. Explicit project rules win.
+
+## 2. Structured assertion
+
+Validate an exact JSON value through a JSON Pointer.
+
+```json
+{
+  "id": "private-product-boundary",
+  "type": "structured_assertion",
+  "path": "state.json",
+  "pointer": "/tesser/public_product",
+  "op": "equals",
+  "value": false
+}
+```
+
+Supported operations:
+
+- `equals`
+- `not_equals`
+- `in`
+- `not_in`
+- `exists`
+
+This is safer than trying to infer machine state from prose.
+
+## 3. Lifecycle contract
+
+Validate JSONL record invariants.
+
+```json
+{
+  "id": "no-zombie-opportunities",
+  "type": "lifecycle",
+  "path": "opportunities.jsonl",
+  "record_id_field": "id",
+  "invariants": [
+    {
+      "when": {
+        "field": "superseded_by",
+        "op": "exists",
+        "value": true
+      },
+      "require": {
+        "field": "status",
+        "op": "not_in",
+        "value": ["active", "pending", "open"]
+      },
+      "message": "superseded record still has a live status"
+    }
+  ]
+}
+```
+
+The scanner does not invent a lifecycle model. You declare the invariant.
+
+## 4. Current-surface contract
+
+Protect a file whose name/job implies current authority.
+
+```json
+{
+  "id": "current-state",
+  "type": "current_surface",
+  "path": "CURRENT_STATE.md",
+  "must_be_authority": "current",
+  "required_patterns": ["Tesser is private"],
+  "forbidden_patterns": ["public Tesser SaaS"],
+  "review_patterns": [
+    {"value": "^## 2026-05", "match": "regex"}
+  ]
+}
+```
+
+`required_patterns` and `forbidden_patterns` are hard checks.
+
+`review_patterns` generate non-blocking review findings.
+
+All pattern objects support the existing `substring`, `phrase`, and opt-in `regex` modes.
+
+## 5. Output-ownership contract
+
+Protect current/generated artifacts from being claimed by the wrong generator.
+
+```json
+{
+  "id": "handoff-owner",
+  "type": "output_ownership",
+  "output": "briefs/latest_handoff.md",
+  "inspect": ["scripts/*.py"],
+  "owners": ["scripts/build_handoff.py"]
+}
+```
+
+The scanner searches the explicitly scoped `inspect` files for the protected output reference.
+
+A reference outside the declared owner patterns is a violation.
+
+By default, at least one declared owner must reference the protected output. Disable that with:
+
+```json
+"require_owner_reference": false
+```
+
+This is deliberately narrower than pretending the scanner can prove arbitrary Python write behavior.
+
+## 6. Append-only contract
+
+Protect ledgers/changelogs where old bytes must not be rewritten.
+
+```json
+{
+  "id": "changelog-integrity",
+  "type": "append_only",
+  "path": "CHANGELOG.md"
+}
+```
+
+Run it with a Git baseline:
+
+```bash
+python ghost_scan.py . \
+  --config private-rules.json \
+  --contract-baseline HEAD
+```
+
+Or while comparing a branch/ref:
+
+```bash
+python ghost_scan.py . \
+  --config private-rules.json \
+  --changed-since main
+```
+
+`--changed-since` is reused as the append-only baseline unless `--contract-baseline` is supplied explicitly.
+
+The check is intentionally strict:
+
+```text
+baseline contents
++ appended bytes
+= allowed
+
+existing baseline byte changed/deleted
+= violation
+```
+
+If no baseline is available, the scanner emits `REVIEW` rather than pretending it verified history.
+
+# Existing text-drift engine
 
 ## Matching modes
 
-Old v0.1 string patterns still work and mean case-insensitive substring matching:
+Backward-compatible string patterns remain case-insensitive substring checks:
 
 ```json
 "stale_patterns": ["MongoDB"]
 ```
 
-v0.2 also accepts explicit pattern objects.
-
-### Phrase
+Explicit modes:
 
 ```json
-{
-  "value": "API v2",
-  "match": "phrase"
-}
+{"value": "API v2", "match": "phrase"}
 ```
-
-Phrase mode matches the declared phrase without matching it inside a larger word-like token.
-
-### Regex
 
 ```json
-{
-  "value": "Project\\s+Rocket",
-  "match": "regex"
-}
+{"value": "Project\\s+Rocket", "match": "regex"}
 ```
 
-Regex matching is opt-in and case-insensitive. Invalid regex is rejected when the config loads.
-
-Allowed modes:
+Supported:
 
 - `substring`
 - `phrase`
 - `regex`
 
-No fuzzy or semantic matching is performed.
+No fuzzy or semantic matching.
 
-## Authority rules
+## Rule provenance
 
-Authority rules are evaluated in order. First match wins.
+Truth rules may optionally explain where they came from:
 
-Example:
+```json
+{
+  "id": "database",
+  "description": "Current primary database",
+  "canonical": "PostgreSQL",
+  "canonical_source": "ARCHITECTURE.md",
+  "introduced": "2026-08-14",
+  "reason": "Primary persistence layer migrated.",
+  "stale_patterns": ["MongoDB"],
+  "severity": 10
+}
+```
+
+Those fields appear in reports so a finding can explain *why the rule exists* instead of merely announcing that Rule 47 is displeased.
+
+## Authority
+
+Rules remain first-match-wins:
 
 ```json
 "authority_rules": [
   {"pattern": "archive/**", "authority": "historical"},
-  {"pattern": "ARCHITECTURE.md", "authority": "governing"},
   {"pattern": "README.md", "authority": "current"}
 ]
 ```
 
-A stale phrase in `README.md` may therefore become **current drift**, while the same phrase in `archive/2025-plan.md` becomes a **harmless ghost**.
+v0.3 adds fallback historical conventions for:
 
-If no authority rule matches, the file is classified as `reference`.
+```text
+history/**
+archive/**
+archives/**
+*_LOG.md
+*_ARCHIVE.md
+*_HISTORY.md
+```
+
+An explicit authority rule always overrides a convention.
 
 ## Suppressions
 
-Suppressions are rule-specific. Suppressing one truth rule does not silence unrelated rules on the same line.
+Existing inline and config suppressions remain rule-specific.
 
-### Inline, same line
-
-```markdown
-MongoDB was the previous store. <!-- drift-ignore: database -->
-```
-
-### Inline, previous line
-
-```markdown
-<!-- drift-ignore: project-name -->
-The old Project Rocket name is preserved here for migration context.
-```
-
-### Config suppression
+Config suppressions may now expire:
 
 ```json
-"suppressions": [
-  {
-    "path": "MIGRATION.md",
-    "rule_id": "database",
-    "reason": "Migration note intentionally names the previous database."
-  }
-]
+{
+  "path": "MIGRATION.md",
+  "rule_id": "database",
+  "reason": "Temporary migration documentation.",
+  "expires": "2026-10-01"
+}
 ```
 
-Config suppressions require a `reason`. The `path` supports the same `fnmatch`-style glob matching used by authority rules.
+Before expiration, the finding is suppressed.
 
-Suppressed findings retain:
+After expiration, it becomes a non-blocking `REVIEW` signal so someone must decide whether the exception is still legitimate.
 
-- rule ID;
-- source path and line;
-- matched text;
-- suppression source;
-- suppression reason.
+# Reports
 
-They do not contribute to the haunting score or current-drift exit status.
-
-## Context
-
-Human-readable findings include one line before and after the match by default.
+Supported output remains:
 
 ```bash
---context 0
---context 1   # default
---context 3
+--report text
+--report json
+--report markdown
 ```
 
-## Report formats
+The old `--json` alias still works.
 
-### Theatrical terminal output
+Reports now include:
 
-Default:
+- current drift
+- contract violations
+- review findings
+- historical ghosts
+- suppressions
+- rule summaries
+- authority summaries
+- contract-type summaries
+- rule/contract provenance where declared
+
+The scanner remains side-effect-free unless `--output` is supplied.
+
+# Git-aware operation
+
+Text scanning still supports:
 
 ```bash
-python ghost_scan.py examples/demo_repo --config examples/truths.json
+--changed-only
 ```
 
-### JSON
-
-The v0.1 `--json` flag remains supported:
+and:
 
 ```bash
-python ghost_scan.py examples/demo_repo \
-  --config examples/truths.json \
-  --json
+--changed-since <ref>
 ```
-
-Equivalent explicit form:
-
-```bash
-python ghost_scan.py examples/demo_repo \
-  --config examples/truths.json \
-  --report json
-```
-
-JSON always includes suppressed findings so automation can audit them.
-
-### Markdown
-
-```bash
-python ghost_scan.py examples/demo_repo \
-  --config examples/truths.json \
-  --report markdown
-```
-
-Include suppression details:
-
-```bash
-python ghost_scan.py examples/demo_repo \
-  --config examples/truths.json \
-  --report markdown \
-  --show-suppressed
-```
-
-The scanner is side-effect-free by default. It only creates a report file when `--output` is explicitly provided:
-
-```bash
-python ghost_scan.py examples/demo_repo \
-  --config examples/truths.json \
-  --report markdown \
-  --output drift-report.md
-```
-
-## Open one door
-
-Inspect exactly one repository-relative file:
-
-```bash
-python ghost_scan.py examples/demo_repo \
-  --config examples/truths.json \
-  --door README.md
-```
-
-## Git-aware modes
-
-These modes require `root` to be a Git work tree.
-
-### Working-tree changes only
-
-```bash
-python ghost_scan.py . \
-  --config private-truths.json \
-  --changed-only
-```
-
-This scans tracked files changed relative to `HEAD` plus untracked files. Deleted files naturally cannot be scanned.
-
-### Files changed since a ref
-
-```bash
-python ghost_scan.py . \
-  --config private-truths.json \
-  --changed-since <commit-or-tag>
-```
-
-This uses Git's `REF...HEAD` comparison and scans files returned by that diff.
 
 No remote fetch is performed.
 
-## Config validation
-
-v0.2 rejects common config mistakes before scanning, including:
-
-- missing or duplicate truth IDs;
-- empty canonical values;
-- missing stale patterns;
-- duplicate pattern/mode pairs;
-- unknown matching modes;
-- malformed regex;
-- invalid severity values;
-- malformed authority rules;
-- duplicate/conflicting authority patterns;
-- suppressions without a reason;
-- suppressions referencing unknown rule IDs;
-- unknown config fields.
-
-Errors are printed plainly instead of dumping a Python traceback for normal config mistakes.
-
-## Exit codes
-
-- `0` — scan completed with no current drift;
-- `2` — scan completed and current drift exists;
-- `3` — usage, config, Git, or other operational input error.
-
-Historical ghosts and suppressed findings do not cause exit `2` by themselves.
-
-## Haunting score
-
-Only unsuppressed current drift contributes severity points. Historical ghosts and suppressions contribute zero.
-
-```text
-0–10     Quiet
-11–25    Whispering
-26–50    Haunted
-51–100   Poltergeist
-100+     CALL THE ARCHITECT
-```
-
-The theatrical classification is intentionally ridiculous. The score underneath it is deterministic.
-
-## Tests
+For a pure v0.2-style pass, skip contracts:
 
 ```bash
-python -m unittest discover -s tests -v
+python ghost_scan.py . --config rules.json --no-contracts
 ```
 
-The v0.2 implementation currently has **29 focused tests** covering authority behavior, matching modes, suppressions, context, reporting, config validation, Git filtering, scan filtering, exit behavior, and scoring.
+# Exit codes
 
-## Initial real-use validation
+- `0` — completed with no current drift or contract violation;
+- `2` — current drift and/or contract violation exists;
+- `3` — usage/config/Git/operational input error.
 
-After the controlled demo/test suite, v0.2 was evaluated against a **small, focused set of real private Nightcoder Designs source material** using private rules derived from current governing state.
+`REVIEW`, historical ghosts, and valid suppressions do not fail the scan by themselves.
 
-The initial focused run produced:
+# Validation
+
+Before publishing the v0.3 engine, a local development harness ran:
+
+```text
+53 tests
+53 passed
+0 failed
+```
+
+That harness covered both v0.2 regression behavior and the new v0.3 contract layer.
+
+The untouched v0.2 fictional demo was also rerun under the v0.3 engine and retained its original result:
 
 ```text
 CURRENT DRIFT        2
-HARMLESS GHOSTS      1
-SUPPRESSED           1
+HARMLESS GHOSTS      2
+SUPPRESSED           2
+HAUNTING SCORE       17  [Whispering]
+EXIT CODE            2
 ```
 
-Manual review classified both reported current-drift findings as genuine stale-current statements. The historical finding was intentionally preserved, and the suppressed finding was an intentional current-file reference to a superseded concept.
+The repository keeps the prior v0.2 regression suite and adds dedicated v0.3 contract tests.
 
-After correcting the two stale-current statements in a test copy, the same focused rules returned zero current drift.
+# Why these contracts exist
 
-This is **not** a claim of statistically meaningful 100% precision. Two current-drift findings are far too small a sample. It is evidence that the deterministic authority + declared-truth model can catch real continuity errors in the system that motivated the tool.
+The v0.3 contract model came from real continuity failure classes found during a deeper private repository audit after v0.2 surfaced genuine stale-current statements.
 
-Broader private multi-repository evaluation remains the next validation step. Private rules and private repository contents are not published as part of that evaluation.
+The important lesson was that stale truth is not always a sentence.
 
-## Deliberate limitations
+It can be:
 
-v0.2 deliberately does not:
+```text
+wrong authority
+stale JSON state
+zombie lifecycle status
+wrong current-surface ownership
+generator output collision
+rewritten historical ledger
+```
+
+Those are deterministic problems when the repository explicitly declares the contract.
+
+The public scanner contains only the generic machinery. Private repository rules and private source material remain private.
+
+# Deliberate limitations
+
+v0.3 deliberately does not:
 
 - use an LLM, embeddings, or semantic similarity;
-- decide canonical truth automatically;
+- infer which document is philosophically correct;
+- auto-generate canonical truth;
 - rewrite files;
 - create commits or pull requests;
-- fetch live truth from APIs or the network;
-- inspect deep language ASTs;
-- provide a plugin framework;
-- emit SARIF;
-- attempt to become a general documentation linter.
+- contact external services;
+- prove arbitrary Python/AST behavior;
+- auto-fix lifecycle records;
+- treat age alone as proof that a record is stale;
+- turn review heuristics into failing violations unless the config explicitly declares them hard contracts.
 
-Those belong later only if repeated real-world use proves they solve an actual problem.
+Ambiguous interpretation belongs above the scanner, in human or bounded reasoning workflows.
 
-## Public/private boundary
+# Public/private boundary
 
-The included demo repository is fictional.
-
-Do not publish private rule files, private repository contents, credentials, sensitive internal truth, or restricted source material merely because the public scanner can process it.
-
-The intended ND pattern is:
+The intended pattern remains:
 
 ```text
 public scanner
       +
-private rules
+private rules/contracts
       +
 private repositories
       =
-private continuity check
+private continuity validation
 ```
 
 The scanner can be public without making the factory public.
