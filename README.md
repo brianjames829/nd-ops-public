@@ -12,13 +12,13 @@ Private Nightcoder Designs repositories remain authoritative for internal state.
 
 ## Start Here
 
-### Runnable: Repo Drift Scanner v0.3.1
+### Runnable: Repo Drift Scanner v0.3.2
 
 [`tools/repo-drift-scanner/`](./tools/repo-drift-scanner/)
 
-A deterministic Python utility that scans for stale current truth and validates explicit repository contracts without using an LLM.
+A deterministic Python utility for stale-truth detection, explicit repository contracts, source coverage, and evidence-domain boundaries without using an LLM.
 
-v0.3 introduced deterministic validation for:
+Current capabilities include:
 
 - authority contracts
 - structured JSON assertions
@@ -26,25 +26,32 @@ v0.3 introduced deterministic validation for:
 - current-surface contracts
 - generated-output ownership
 - append-only Git history
-- blocking `VIOLATION` versus non-blocking `REVIEW` findings
-- optional rule provenance
+- blocking `VIOLATION` versus non-blocking `REVIEW`
+- rule provenance
 - expiring suppressions
-- built-in historical path/file conventions with explicit override
-- theatrical terminal, JSON, and Markdown reports
-- `--changed-only`, `--changed-since <ref>`, and append-only baseline checks
+- built-in historical path/file conventions
+- text / JSON / Markdown reports
+- `--changed-only` and `--changed-since <ref>`
+- source-coverage accounting
+- `.rst` and `.markdown` scanning
+- important extensionless text surfaces
+- `go.mod` support
+- active config/output self-exclusion
+- config `exclude_paths` and repeatable CLI `--exclude`
+- visible evidence-domain exclusions in coverage reports
 - zero model/API/runtime-package dependencies
 
-v0.3.1 adds source-coverage hardening after an external public-repository benchmark exposed a silent format blind spot:
+v0.3.2 was driven by real self-reference failures found during external/self-scanning use: config files, prior scanner reports, and test fixtures could otherwise become false evidence. The new boundary model distinguishes **scanned**, **ignored**, and **excluded** rather than letting silence impersonate inspection.
 
-- `.rst` scanning
-- important extensionless text surfaces such as `README` and `VERSION`
-- coverage accounting for text/source candidates discovered, scanned, and ignored
-- ignored-type summaries
-- non-blocking coverage reviews when a high-value text surface such as `README.adoc` is not actually scanned
+The scanner includes a public cross-model continuity file:
 
-The v0.3 development harness ran 53 focused tests successfully. The v0.3.1 coverage changes then passed a separate 15/15 focused regression harness, including replay of the external `.rst` miss and preservation of the original v0.2 fictional demo behavior.
+[`tools/repo-drift-scanner/AI_HANDOFF.md`](./tools/repo-drift-scanner/AI_HANDOFF.md)
 
-The interface is deliberately stranger than the machinery. The scanner only claims violations where the repository declares a deterministic contract; ambiguous or incomplete-coverage signals remain review findings instead of pretending certainty.
+That handoff is written so a fresh ChatGPT, Gemini, Grok, Claude, other model, or human maintainer can continue from the current GitHub state without prior conversation history.
+
+Validation receipts are kept distinct by release. A focused v0.3 harness recorded 53/53, v0.3.1 hardening recorded 15/15, an independent tester reported 60/60 on the then-current integrated v0.3.1 public tree, and the v0.3.2 development verification expanded to the current 71-test public regression shape locally. See the scanner README/handoff for exact boundaries and caveats.
+
+The interface is deliberately stranger than the machinery. The scanner only claims violations where the repository declares deterministic evidence; ambiguity and incomplete coverage remain review signals instead of pretending certainty.
 
 ### Tesser v0.2 Repository Ingestion Spine
 
