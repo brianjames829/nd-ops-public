@@ -12,32 +12,31 @@ Private Nightcoder Designs repositories remain authoritative for internal state.
 
 ## Start Here
 
-### Runnable: Repo Drift Scanner v0.2
+### Runnable: Repo Drift Scanner v0.3
 
 [`tools/repo-drift-scanner/`](./tools/repo-drift-scanner/)
 
-A deterministic Python utility that scans repositories for stale statements while distinguishing current drift from legitimate historical records.
+A deterministic Python utility that scans for stale current truth and validates explicit repository contracts without using an LLM.
 
-v0.2 is the operational-hardening release. It includes:
+v0.3 keeps the v0.2 text-drift engine and adds deterministic validation for:
 
-- authority-aware file classification
-- declared current-truth / stale-pattern rules
-- backward-compatible substring matching
-- opt-in phrase and regex matching
-- rule-specific inline suppressions
-- config suppressions with required reasons
-- inspectable suppressed findings
-- context around findings
+- authority contracts
+- structured JSON assertions
+- JSONL lifecycle invariants
+- current-surface contracts
+- generated-output ownership
+- append-only Git history
+- blocking `VIOLATION` versus non-blocking `REVIEW` findings
+- optional rule provenance
+- expiring suppressions
+- built-in historical path/file conventions with explicit override
 - theatrical terminal, JSON, and Markdown reports
-- summaries by rule and authority
-- `--changed-only` and `--changed-since <ref>` Git modes
-- deterministic haunting score
-- stable automation-oriented exit codes
-- fictional demo repository
-- 29 focused tests
+- `--changed-only`, `--changed-since <ref>`, and append-only baseline checks
 - zero model/API/runtime-package dependencies
 
-The interface is deliberately stranger than the machinery. The underlying scanner remains deterministic and does not infer truth or rewrite files.
+The v0.3 pre-publication development harness ran 53 focused tests successfully, and the original v0.2 fictional demo retained its previous 2-drift / 2-history / 2-suppression result under the new engine.
+
+The interface is deliberately stranger than the machinery. The scanner only claims violations where the repository declares a deterministic contract; ambiguous signals can be emitted as review findings instead of pretending certainty.
 
 ### Tesser v0.2 Repository Ingestion Spine
 
