@@ -5,18 +5,13 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from drift_core import (
-    DEFAULT_EXCLUDES,
-    DEFAULT_EXTENSIONS,
-    DEFAULT_TEXT_FILENAMES,
-)
+from drift_core import DEFAULT_EXCLUDES, DEFAULT_EXTENSIONS, DEFAULT_TEXT_FILENAMES, SPECIAL_TEXT_FILENAMES
+from drift_scope import ScanBoundary
 
-# Broad enough to expose meaningful source-coverage gaps without treating images,
-# archives, fonts, or other obvious binary assets as "ignored text".
 TEXT_CANDIDATE_EXTENSIONS = {
     '.adoc', '.asciidoc', '.bash', '.bat', '.c', '.cfg', '.cmd', '.conf',
     '.cpp', '.cs', '.css', '.csv', '.go', '.h', '.hpp', '.html', '.ini',
-    '.java', '.js', '.jsx', '.kt', '.lua', '.md', '.markdown', '.org',
+    '.java', '.js', '.jsx', '.kt', '.lua', '.md', '.markdown', '.mod', '.org',
     '.php', '.properties', '.ps1', '.py', '.r', '.rb', '.rs', '.rst', '.scala',
     '.sh', '.sql', '.swift', '.tex', '.textile', '.toml', '.ts', '.tsx', '.tsv',
     '.txt', '.wiki', '.xml', '.yaml', '.yml', '.json', '.jsonl',
@@ -33,7 +28,9 @@ class CoverageResult:
     discovered_count: int
     scanned_count: int
     ignored_count: int
+    excluded_count: int
     ignored_by_type: tuple[tuple[str, int], ...]
+    excluded_by_rule: tuple[tuple[str, str, str, int], ...]
     high_value_ignored: tuple[str, ...]
     undecodable_supported: tuple[str, ...]
 
@@ -43,13 +40,18 @@ class CoverageResult:
             'files_discovered': self.discovered_count,
             'files_scanned': self.scanned_count,
             'files_ignored': self.ignored_count,
+            'files_excluded': self.excluded_count,
             'ignored_by_type': dict(self.ignored_by_type),
+            'excluded_by_rule': [
+                {'source': source, 'pattern': pattern, 'reason': reason, 'matched': matched}
+                for source, pattern, reason, matched in self.excluded_by_rule
+            ],
             'high_value_ignored': list(self.high_value_ignored),
             'undecodable_supported': list(self.undecodable_supported),
         }
 
 
-def _excluded(root: Path, path: Path) -> bool:
+def _excluded_default(root: Path, path: Path) -> bool:
     return any(part in DEFAULT_EXCLUDES for part in path.relative_to(root).parts)
 
 
@@ -57,12 +59,13 @@ def _supported(path: Path) -> bool:
     return (
         path.suffix.lower() in DEFAULT_EXTENSIONS
         or (not path.suffix and path.name.upper() in DEFAULT_TEXT_FILENAMES)
+        or path.name.casefold() in SPECIAL_TEXT_FILENAMES
     )
 
 
 def _high_value(path: Path) -> bool:
     name = path.name.casefold()
-    if not path.suffix and path.name.upper() in DEFAULT_TEXT_FILENAMES:
+    if (not path.suffix and path.name.upper() in DEFAULT_TEXT_FILENAMES) or path.name.casefold() in SPECIAL_TEXT_FILENAMES:
         return True
     if path.suffix.lower() not in TEXT_CANDIDATE_EXTENSIONS:
         return False
@@ -83,24 +86,18 @@ def _candidate(path: Path) -> bool:
     return _high_value(path)
 
 
-def _scope_files(
-    root: Path,
-    *,
-    door: str | None,
-    included_paths: set[str] | None,
-) -> tuple[str, list[Path]]:
+def _scope_files(root: Path, *, door: str | None, included_paths: set[str] | None) -> tuple[str, list[Path]]:
     normalized_door = door.replace('\\', '/') if door else None
     normalized_included = (
         {p.replace('\\', '/') for p in included_paths}
-        if included_paths is not None
-        else None
+        if included_paths is not None else None
     )
 
     if normalized_door is not None:
         if normalized_included is not None and normalized_door not in normalized_included:
             return 'door+filtered', []
         path = root / normalized_door
-        if path.is_file() and not _excluded(root, path):
+        if path.is_file() and not _excluded_default(root, path):
             return 'door', [path]
         return 'door', []
 
@@ -108,33 +105,36 @@ def _scope_files(
         files = []
         for rel in sorted(normalized_included):
             path = root / rel
-            if path.is_file() and not _excluded(root, path):
+            if path.is_file() and not _excluded_default(root, path):
                 files.append(path)
         return 'filtered', files
 
     return 'full', [
-        path
-        for path in sorted(root.rglob('*'))
-        if path.is_file() and not _excluded(root, path)
+        path for path in sorted(root.rglob('*'))
+        if path.is_file() and not _excluded_default(root, path)
     ]
 
 
-def analyze_coverage(
-    root: Path,
-    *,
-    door: str | None = None,
-    included_paths: set[str] | None = None,
-) -> CoverageResult:
+def analyze_coverage(root: Path, *, door: str | None = None, included_paths: set[str] | None = None, boundary: ScanBoundary | None = None) -> CoverageResult:
     scope, raw_files = _scope_files(root, door=door, included_paths=included_paths)
     files = [path for path in raw_files if _candidate(path)]
 
     ignored = Counter()
+    excluded_matches: Counter[tuple[str, str, str]] = Counter()
     high_value_ignored: list[str] = []
     undecodable_supported: list[str] = []
     scanned = 0
+    excluded_count = 0
 
     for path in files:
         rel = path.relative_to(root).as_posix()
+        if boundary is not None:
+            rule = boundary.match(rel)
+            if rule is not None:
+                excluded_count += 1
+                excluded_matches[(rule.source, rule.pattern, rule.reason)] += 1
+                continue
+
         if _supported(path):
             try:
                 path.read_text(encoding='utf-8')
@@ -153,14 +153,22 @@ def analyze_coverage(
         if _high_value(path):
             high_value_ignored.append(rel)
 
+    boundary_rows = []
+    if boundary is not None:
+        for rule in boundary.rules:
+            key = (rule.source, rule.pattern, rule.reason)
+            boundary_rows.append((*key, excluded_matches.get(key, 0)))
+
     discovered = len(files)
-    ignored_count = discovered - scanned
+    ignored_count = discovered - scanned - excluded_count
     return CoverageResult(
         scope=scope,
         discovered_count=discovered,
         scanned_count=scanned,
         ignored_count=ignored_count,
+        excluded_count=excluded_count,
         ignored_by_type=tuple(sorted(ignored.items())),
+        excluded_by_rule=tuple(boundary_rows),
         high_value_ignored=tuple(sorted(set(high_value_ignored))),
         undecodable_supported=tuple(sorted(set(undecodable_supported))),
     )
@@ -174,14 +182,19 @@ def decorate_report(rendered: str, report: str, coverage: CoverageResult) -> str
 
     if report == 'markdown':
         lines = [
-            '',
-            '## Coverage',
-            '',
+            '', '## Coverage', '',
             f'- **Scope:** `{coverage.scope}`',
-            f'- **Text candidates discovered:** {coverage.discovered_count}',
+            f'- **Text/source candidates discovered:** {coverage.discovered_count}',
             f'- **Files scanned:** {coverage.scanned_count}',
             f'- **Candidate files ignored:** {coverage.ignored_count}',
+            f'- **Candidate files excluded:** {coverage.excluded_count}',
         ]
+        if coverage.excluded_by_rule:
+            lines.extend(['', '### Evidence-domain exclusions', '', '| Source | Pattern | Matched | Reason |', '|---|---|---:|---|'])
+            lines.extend(
+                f'| `{source}` | `{pattern}` | {matched} | {reason} |'
+                for source, pattern, reason, matched in coverage.excluded_by_rule
+            )
         if coverage.ignored_by_type:
             lines.extend(['', '### Ignored by type', '', '| Type | Files |', '|---|---:|'])
             lines.extend(f'| `{kind}` | {count} |' for kind, count in coverage.ignored_by_type)
@@ -194,24 +207,25 @@ def decorate_report(rendered: str, report: str, coverage: CoverageResult) -> str
         return rendered.rstrip() + '\n' + '\n'.join(lines) + '\n'
 
     lines = [
-        '',
-        'COVERAGE',
+        '', 'COVERAGE',
         f'SCOPE                 {coverage.scope}',
         f'FILES DISCOVERED      {coverage.discovered_count}',
         f'FILES SCANNED         {coverage.scanned_count}',
         f'FILES IGNORED         {coverage.ignored_count}',
+        f'FILES EXCLUDED        {coverage.excluded_count}',
     ]
+    if coverage.excluded_by_rule:
+        lines.extend(['', 'EVIDENCE-DOMAIN EXCLUSIONS'])
+        for source, pattern, reason, matched in coverage.excluded_by_rule:
+            lines.append(f'{source:<22} {matched:>4}  {pattern}  [{reason}]')
     if coverage.ignored_by_type:
-        lines.append('')
-        lines.append('IGNORED BY TYPE')
+        lines.extend(['', 'IGNORED BY TYPE'])
         width = max(len(kind) for kind, _ in coverage.ignored_by_type)
         lines.extend(f'{kind:<{width}}  {count}' for kind, count in coverage.ignored_by_type)
     if coverage.high_value_ignored:
-        lines.append('')
-        lines.append('HIGH-VALUE IGNORED SURFACES')
+        lines.extend(['', 'HIGH-VALUE IGNORED SURFACES'])
         lines.extend(f'  {path}' for path in coverage.high_value_ignored)
     if coverage.undecodable_supported:
-        lines.append('')
-        lines.append('SUPPORTED BUT UNDECODABLE')
+        lines.extend(['', 'SUPPORTED BUT UNDECODABLE'])
         lines.extend(f'  {path}' for path in coverage.undecodable_supported)
     return rendered.rstrip() + '\n' + '\n'.join(lines)
