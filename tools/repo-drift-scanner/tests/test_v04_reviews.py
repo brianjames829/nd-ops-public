@@ -8,7 +8,7 @@ import unittest
 
 from drift_core import ConfigError, PatternSpec, SuppressionRule, TruthRule, load_config, scan
 from drift_report import render_json, render_markdown, render_text
-from ghost_scan import VERSION, main
+from ghost_scan import build_parser, main
 
 
 def truth():
@@ -207,8 +207,10 @@ class ReviewReportingAndCliTests(unittest.TestCase):
                     2,
                 )
 
-    def test_version_is_v040(self):
-        self.assertEqual(VERSION, '0.4.0')
+    def test_parser_exposes_fail_on_review(self):
+        parser = build_parser()
+        args = parser.parse_args(['repo', '--config', 'rules.json', '--fail-on-review'])
+        self.assertTrue(args.fail_on_review)
 
 
 if __name__ == '__main__':
