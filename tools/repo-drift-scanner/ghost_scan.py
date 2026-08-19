@@ -19,7 +19,7 @@ from drift_git import GitError, changed_only_paths, changed_since_paths
 from drift_report import render_json, render_markdown, render_text
 from drift_scope import build_boundary
 
-VERSION = '0.4.0'
+VERSION = '0.3.2'
 
 
 class DriftArgumentParser(argparse.ArgumentParser):
