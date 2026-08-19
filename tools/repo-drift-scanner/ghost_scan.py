@@ -19,7 +19,7 @@ from drift_git import GitError, changed_only_paths, changed_since_paths
 from drift_report import render_json, render_markdown, render_text
 from drift_scope import build_boundary
 
-VERSION = '0.3.2'
+VERSION = '0.4.0'
 
 
 class DriftArgumentParser(argparse.ArgumentParser):
@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('root', type=Path, help='Repository or directory to inspect')
     parser.add_argument(
         '--config', type=Path, required=True,
-        help='JSON file containing authority, truth, suppression, exclusion, and optional contract rules',
+        help='JSON file containing authority, truth, suppression, acknowledgement, exclusion, and optional contract rules',
     )
     parser.add_argument('--door', help='Inspect one relative file path instead of the whole tree')
     parser.add_argument(
@@ -56,6 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--show-suppressed', action='store_true',
         help='Include suppressed findings in text/Markdown reports',
+    )
+    parser.add_argument(
+        '--fail-on-review', action='store_true',
+        help='Return exit 2 when non-blocking REVIEW signals exist, in addition to normal drift/contract failures',
     )
     parser.add_argument(
         '--contract-baseline', metavar='REF',
@@ -182,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(rendered)
 
     blocking = bool(result.drift or contract_result.violations)
+    if args.fail_on_review and (result.reviews or contract_result.reviews):
+        blocking = True
     return 2 if blocking else 0
 
 
