@@ -1,0 +1,29 @@
+{
+  "authority_rules": [
+    {
+      "pattern": "archive/**",
+      "authority": "historical"
+    }
+  ],
+  "truths": [
+    {
+      "id": "platform-name",
+      "description": "Current platform name",
+      "canonical": "Northstar",
+      "canonical_source": "CURRENT_STATE.md",
+      "reason": "CURRENT_STATE.md owns the current product identity.",
+      "stale_patterns": [
+        "Project Lantern"
+      ],
+      "severity": 10
+    }
+  ],
+  "acknowledgements": [
+    {
+      "path": "ROADMAP.md",
+      "rule_id": "platform-name",
+      "reason": "The old working name is intentionally retained while the roadmap migration is reviewed.",
+      "expires": "2026-12-31"
+    }
+  ]
+}
