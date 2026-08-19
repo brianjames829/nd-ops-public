@@ -20,6 +20,7 @@ MATCH_MODES = {'substring', 'phrase', 'regex'}
 HISTORICAL_AUTHORITIES = {'historical', 'archive'}
 HISTORICAL_DIR_NAMES = {'history', 'archive', 'archives'}
 INLINE_MARKER = re.compile(r'drift-ignore:\s*([A-Za-z0-9_.-]+)', re.IGNORECASE)
+INLINE_REVIEW_MARKER = re.compile(r'drift-review:\s*([A-Za-z0-9_.-]+)', re.IGNORECASE)
 SLUG = re.compile(r'^[A-Za-z0-9_.-]+$')
 
 
@@ -53,6 +54,7 @@ class SuppressionRule:
     rule_id: str
     reason: str
     expires: date | None = None
+    disposition: str = 'suppress'
 
 
 @dataclass(frozen=True)
@@ -130,7 +132,6 @@ def _reject_unknown(item: dict, allowed: set[str], where: str) -> None:
 def _parse_pattern(raw: object, where: str) -> PatternSpec:
     if isinstance(raw, str):
         return PatternSpec(_expect_string(raw, where))
-
     item = _expect_dict(raw, where)
     _reject_unknown(item, {'value', 'match'}, where)
     value = _expect_string(item.get('value'), f'{where}.value')
@@ -167,7 +168,7 @@ def _load_root(path: Path) -> dict:
     root = _expect_dict(data, 'config')
     _reject_unknown(
         root,
-        {'authority_rules', 'truths', 'suppressions', 'contracts', 'exclude_paths'},
+        {'authority_rules', 'truths', 'suppressions', 'acknowledgements', 'contracts', 'exclude_paths'},
         'config',
     )
     return root
@@ -188,9 +189,29 @@ def load_exclude_paths(path: Path) -> list[str]:
     return result
 
 
+def _parse_dispositions(
+    root: dict,
+    key: str,
+    rule_ids: set[str],
+    disposition: str,
+) -> list[SuppressionRule]:
+    result: list[SuppressionRule] = []
+    for index, raw in enumerate(_expect_list(root.get(key, []), key)):
+        where = f'{key}[{index}]'
+        item = _expect_dict(raw, where)
+        _reject_unknown(item, {'path', 'rule_id', 'reason', 'expires'}, where)
+        path_pattern = _expect_string(item.get('path'), f'{where}.path')
+        rule_id = _expect_string(item.get('rule_id'), f'{where}.rule_id')
+        reason = _expect_string(item.get('reason'), f'{where}.reason')
+        if rule_id not in rule_ids:
+            raise ConfigError(f'{where}.rule_id references unknown truth rule: {rule_id}')
+        expires = _parse_date(item.get('expires'), f'{where}.expires')
+        result.append(SuppressionRule(path_pattern, rule_id, reason, expires, disposition))
+    return result
+
+
 def load_config(path: Path) -> tuple[list[AuthorityRule], list[TruthRule], list[SuppressionRule]]:
     root = _load_root(path)
-
     authorities: list[AuthorityRule] = []
     seen_patterns: dict[str, str] = {}
     for index, raw in enumerate(_expect_list(root.get('authority_rules', []), 'authority_rules')):
@@ -268,20 +289,9 @@ def load_config(path: Path) -> tuple[list[AuthorityRule], list[TruthRule], list[
             )
         )
 
-    suppressions: list[SuppressionRule] = []
-    for index, raw in enumerate(_expect_list(root.get('suppressions', []), 'suppressions')):
-        where = f'suppressions[{index}]'
-        item = _expect_dict(raw, where)
-        _reject_unknown(item, {'path', 'rule_id', 'reason', 'expires'}, where)
-        path_pattern = _expect_string(item.get('path'), f'{where}.path')
-        rule_id = _expect_string(item.get('rule_id'), f'{where}.rule_id')
-        reason = _expect_string(item.get('reason'), f'{where}.reason')
-        if rule_id not in rule_ids:
-            raise ConfigError(f'{where}.rule_id references unknown truth rule: {rule_id}')
-        expires = _parse_date(item.get('expires'), f'{where}.expires')
-        suppressions.append(SuppressionRule(path_pattern, rule_id, reason, expires))
-
-    return authorities, truths, suppressions
+    dispositions = _parse_dispositions(root, 'suppressions', rule_ids, 'suppress')
+    dispositions.extend(_parse_dispositions(root, 'acknowledgements', rule_ids, 'review'))
+    return authorities, truths, dispositions
 
 
 def _built_in_authority(rel_path: str) -> str | None:
@@ -332,30 +342,38 @@ def search_pattern(pattern: PatternSpec, line: str) -> str | None:
     return match.group(0) if match else None
 
 
-def _inline_suppression(line: str, previous: str | None, rule_id: str) -> tuple[str, str] | None:
-    for source, candidate in (('inline:same-line', line), ('inline:previous-line', previous)):
+def _inline_marker(
+    pattern: re.Pattern[str],
+    line: str,
+    previous: str | None,
+    rule_id: str,
+    label: str,
+) -> tuple[str, str] | None:
+    for where, candidate in (('same-line', line), ('previous-line', previous)):
         if not candidate:
             continue
-        if any(m.group(1).casefold() == rule_id.casefold() for m in INLINE_MARKER.finditer(candidate)):
-            return source, 'inline drift-ignore marker'
+        if any(m.group(1).casefold() == rule_id.casefold() for m in pattern.finditer(candidate)):
+            return f'inline:{where}', label
     return None
 
 
-def _config_suppression(
+def _matching_dispositions(
     path: str,
     rule_id: str,
     rules: Sequence[SuppressionRule],
     *,
     today: date,
-) -> tuple[str, str, bool] | None:
+) -> list[tuple[str, str, bool, str]]:
+    matches: list[tuple[str, str, bool, str]] = []
     for rule in rules:
         if rule.rule_id == rule_id and fnmatch.fnmatch(path, rule.path):
             expired = rule.expires is not None and today > rule.expires
             reason = rule.reason
             if expired:
                 reason = f'{reason} (expired {rule.expires.isoformat()})'
-            return f'config:{rule.path}', reason, expired
-    return None
+            prefix = 'config' if rule.disposition == 'suppress' else 'acknowledgement'
+            matches.append((f'{prefix}:{rule.path}', reason, expired, rule.disposition))
+    return matches
 
 
 def _context(
@@ -415,27 +433,46 @@ def scan(
                     kind = 'harmless_ghost' if historical else 'current_drift'
                     score = 0 if historical else truth.severity
 
-                    inline = _inline_suppression(line, previous, truth.rule_id)
-                    config_suppression = None
-                    if inline is None:
-                        config_suppression = _config_suppression(
-                            rel, truth.rule_id, suppressions, today=today
-                        )
+                    inline_suppress = _inline_marker(
+                        INLINE_MARKER, line, previous, truth.rule_id, 'inline drift-ignore marker'
+                    )
+                    inline_review = _inline_marker(
+                        INLINE_REVIEW_MARKER, line, previous, truth.rule_id, 'inline drift-review marker'
+                    )
+                    dispositions = _matching_dispositions(
+                        rel, truth.rule_id, suppressions, today=today
+                    )
 
                     suppression_source = None
                     suppression_reason = None
                     suppressed = False
 
-                    if inline is not None:
-                        suppression_source, suppression_reason = inline
+                    active_suppressions = [
+                        d for d in dispositions if d[3] == 'suppress' and not d[2]
+                    ]
+                    active_reviews = [
+                        d for d in dispositions if d[3] == 'review' and not d[2]
+                    ]
+                    expired_dispositions = [d for d in dispositions if d[2]]
+
+                    if inline_suppress is not None:
+                        suppression_source, suppression_reason = inline_suppress
                         suppressed = True
-                    elif config_suppression is not None:
-                        suppression_source, suppression_reason, expired = config_suppression
-                        if expired and not historical:
-                            kind = 'review'
-                            score = 0
-                        elif not expired:
-                            suppressed = True
+                    elif active_suppressions:
+                        suppression_source, suppression_reason, _, _ = active_suppressions[0]
+                        suppressed = True
+                    elif not historical and inline_review is not None:
+                        suppression_source, suppression_reason = inline_review
+                        kind = 'review'
+                        score = 0
+                    elif not historical and active_reviews:
+                        suppression_source, suppression_reason, _, _ = active_reviews[0]
+                        kind = 'review'
+                        score = 0
+                    elif not historical and expired_dispositions:
+                        suppression_source, suppression_reason, _, _ = expired_dispositions[0]
+                        kind = 'review'
+                        score = 0
 
                     finding = Finding(
                         rel, index + 1, line.strip(), truth.rule_id, truth.description,
