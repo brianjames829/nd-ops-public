@@ -114,9 +114,9 @@ def render_text(
             out.append('Verdict:    HARMLESS GHOST — preserve history')
         elif f.kind == 'review':
             out.extend([
-                'Verdict:    REVIEW — deterministic signal, not a failing violation',
-                f'Source:     {f.suppression_source}',
-                f'Reason:     {f.suppression_reason}',
+                'Verdict:    REVIEW — visible unresolved/expired exception; non-blocking by default',
+                f'Disposition: {f.suppression_source}',
+                f'Reason:      {f.suppression_reason}',
             ])
         else:
             out.extend([f'Suppressed: {f.suppression_source}', f'Reason:     {f.suppression_reason}'])
@@ -132,7 +132,7 @@ def render_text(
         out.append('The archive is quiet. Suspiciously quiet.')
     if result.reviews or contract_result.reviews:
         out.append(
-            f'{len(result.reviews) + len(contract_result.reviews)} review signal(s) need judgment but do not fail the scan.'
+            f'{len(result.reviews) + len(contract_result.reviews)} review signal(s) need judgment but do not fail the scan by default.'
         )
     if result.ghosts:
         out.append(f'{len(result.ghosts)} historical ghost(s) may remain undisturbed.')
@@ -220,8 +220,11 @@ def render_markdown(
         lines.extend([
             f'### `{f.path}:{f.line}`', '', _md_context(f), '',
             f'- **Rule:** {f.description} (`{f.rule_id}`)',
-            f'- **Finding:** suppression expired; verify whether the exception is still intentional',
-            f'- **Reason:** {f.suppression_reason}', '',
+            f'- **Matched:** `{f.matched}`',
+            f'- **Canonical:** {f.canonical}',
+            f'- **Disposition source:** `{f.suppression_source}`',
+            f'- **Reason:** {f.suppression_reason}',
+            '- **Verdict:** REVIEW — visible and non-blocking by default', '',
         ])
     for f in contract_reviews:
         lines.extend([
@@ -265,6 +268,8 @@ def _finding_dict(f: Finding) -> dict:
         'context_after': [{'line': n, 'text': t} for n, t in f.context_after],
         'suppression_source': f.suppression_source,
         'suppression_reason': f.suppression_reason,
+        'disposition_source': f.suppression_source if f.kind == 'review' else None,
+        'disposition_reason': f.suppression_reason if f.kind == 'review' else None,
         'canonical_source': f.canonical_source,
         'introduced': f.introduced,
         'rule_reason': f.rule_reason,
