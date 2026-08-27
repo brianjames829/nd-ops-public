@@ -1,0 +1,14 @@
+schema_version: nd-repository/v1
+repo_id: nd-ops-public
+repository: brianjames829/nd-ops-public
+status: active
+role: public_proof_and_public_tools
+authority_class: public_sanitized_noncanonical
+human_entrypoint: README.md
+machine_entrypoint: .nd/repo.yaml
+owner_system: Nightcoder Designs
+private_source_repo: brianjames829/nd-ops-private
+machine_notes:
+  - Contains curated public-safe proof and runnable public utilities.
+  - Public proof is not authoritative internal ND state.
+  - Repo Drift Scanner currently lives here until its commercialization boundary earns an independent repository.
