@@ -11,4 +11,6 @@ private_source_repo: brianjames829/nd-ops-private
 machine_notes:
   - Contains curated public-safe proof and runnable public utilities.
   - Public proof is not authoritative internal ND state.
-  - Repo Drift Scanner currently lives here until its commercialization boundary earns an independent repository.
+  - Repo Drift Scanner v0.3.2 is deterministic guard/contract machinery for explicit invariants and understood recurrence classes.
+  - The broader semantic Repo Drift Intelligence direction is not represented here as a finished public product.
+  - Repo Drift Scanner remains here until its commercialization boundary earns an independent repository.
