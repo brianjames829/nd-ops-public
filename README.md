@@ -1,6 +1,6 @@
 # Nightcoder Designs — Public Proof
 
-Updated: 2026-08-14
+Updated: 2026-08-28
 
 This repository contains curated, sanitized proof from Nightcoder Designs systems work.
 
@@ -12,11 +12,23 @@ Private Nightcoder Designs repositories remain authoritative for internal state.
 
 ## Start Here
 
+If you are new to Nightcoder Designs and want the public engineering trail rather than marketing prose, use this order:
+
+1. this README for repository purpose and boundaries;
+2. [`ARTIFACT_INDEX.md`](./ARTIFACT_INDEX.md) for the public-proof inventory;
+3. [`tools/repo-drift-scanner/README.md`](./tools/repo-drift-scanner/README.md) for the runnable Repo Drift Scanner;
+4. [`tools/repo-drift-scanner/AI_HANDOFF.md`](./tools/repo-drift-scanner/AI_HANDOFF.md) for model/human continuation context;
+5. [`ARCHITECTURE_OVERVIEW.md`](./ARCHITECTURE_OVERVIEW.md) for the public-safe production/proof architecture.
+
+Public artifacts are proof surfaces, not institutional authority. If a public artifact and a private current-state source disagree, the public artifact should be treated as potentially stale until reconciled.
+
 ### Runnable: Repo Drift Scanner v0.3.2
 
 [`tools/repo-drift-scanner/`](./tools/repo-drift-scanner/)
 
 A deterministic Python utility for stale-truth detection, explicit repository contracts, source coverage, and evidence-domain boundaries without using an LLM.
+
+**Important boundary:** v0.3.2 is intentionally deterministic. It is a guard/contract layer for explicit invariants and already-understood recurrence classes. Nightcoder Designs does **not** claim that it solves the broader semantic repository-drift problem where the important contradiction has not already been encoded as a rule.
 
 Current capabilities include:
 
@@ -41,17 +53,19 @@ Current capabilities include:
 - visible evidence-domain exclusions in coverage reports
 - zero model/API/runtime-package dependencies
 
-v0.3.2 was driven by real self-reference failures found during external/self-scanning use: config files, prior scanner reports, and test fixtures could otherwise become false evidence. The new boundary model distinguishes **scanned**, **ignored**, and **excluded** rather than letting silence impersonate inspection.
+v0.3.2 was driven by real self-reference failures found during external/self-scanning use: config files, prior scanner reports, and test fixtures could otherwise become false evidence. The boundary model distinguishes **scanned**, **ignored**, and **excluded** rather than letting silence impersonate inspection.
 
 The scanner includes a public cross-model continuity file:
 
 [`tools/repo-drift-scanner/AI_HANDOFF.md`](./tools/repo-drift-scanner/AI_HANDOFF.md)
 
-That handoff is written so a fresh ChatGPT, Gemini, Grok, Claude, other model, or human maintainer can continue from the current GitHub state without prior conversation history.
+That handoff is written so a fresh ChatGPT, Gemini, Grok, Claude, other model, or human maintainer can continue from the current public GitHub state without prior conversation history.
 
 Validation receipts are kept distinct by release. A focused v0.3 harness recorded 53/53, v0.3.1 hardening recorded 15/15, an independent tester reported 60/60 on the then-current integrated v0.3.1 public tree, and the v0.3.2 development verification expanded to the current 71-test public regression shape locally. See the scanner README/handoff for exact boundaries and caveats.
 
-The interface is deliberately stranger than the machinery. The scanner only claims violations where the repository declares deterministic evidence; ambiguity and incomplete coverage remain review signals instead of pretending certainty.
+The interface is deliberately stricter than the machinery. The scanner only claims violations where the repository declares deterministic evidence; ambiguity and incomplete coverage remain review signals instead of pretending certainty.
+
+Nightcoder Designs is separately developing the broader **Repo Drift Intelligence** direction: semantic reconstruction of repository claims/relationships, novel contradiction discovery, bounded follow-up investigation, evidence/provenance/uncertainty, and machine-consumable currentness/trust output. That work is not represented here as a finished public product.
 
 ### Tesser v0.2 Repository Ingestion Spine
 
