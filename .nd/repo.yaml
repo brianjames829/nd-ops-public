@@ -8,9 +8,22 @@ human_entrypoint: README.md
 machine_entrypoint: .nd/repo.yaml
 owner_system: Nightcoder Designs
 private_source_repo: brianjames829/nd-ops-private
+released_repo_drift_scanner:
+  version: v0.3.2
+  location: tools/repo-drift-scanner
+  role: deterministic_guard_experiment
+parked_candidate_lineage:
+  repo_drift_scanner_v0_4_review_dispositions:
+    status: unreleased_candidate_archived
+    archive_ref: archive/repo-drift-scanner-v0.4-candidate
+    archive_commit: cd1afa24e3fbcbbe28121299057145c58452e0fc
+    former_agent_ref: agent/acknowledged-review-signals
+    former_agent_ref_safe_to_delete_after_identity_proof: true
+    released_version_changed: false
 machine_notes:
   - Contains curated public-safe proof and runnable public utilities.
   - Public proof is not authoritative internal ND state.
-  - Repo Drift Scanner v0.3.2 is deterministic guard/contract machinery for explicit invariants and understood recurrence classes.
+  - Repo Drift Scanner v0.3.2 remains the released deterministic guard/contract utility for explicit invariants and understood recurrence classes.
   - The broader semantic Repo Drift Intelligence direction is not represented here as a finished public product.
+  - An unreleased v0.4 acknowledgement/REVIEW candidate is preserved under archive/repo-drift-scanner-v0.4-candidate. Archive existence does not make it released or current.
   - Repo Drift Scanner remains here until its commercialization boundary earns an independent repository.
